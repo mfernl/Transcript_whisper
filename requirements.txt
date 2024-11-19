@@ -1,0 +1,8 @@
+openai-whisper
+asyncio
+websockets
+wave
+pydub
+fastapi
+pydantic
+subprocess
