@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, UploadFile
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import os
@@ -11,6 +11,7 @@ import shutil
 import uuid
 #import fastprueba
 import subprocess
+import io
 
 app = FastAPI()
 
@@ -97,12 +98,33 @@ def probando():
     return {"message": "Hola fastapi"}
     
 @app.put("/upload")
-async def upload_archivo(file: UploadFile = File()):
+async def upload_archivo(uploaded_file: UploadFile):
     #with open(f"./upload_files/{file.filename}","wb") as f:
         #shutil.copyfileobj(file.file, f)
-    content = await file.read()
-    print(content)
-    return {"filename": file.filename, "status": "success", "contents": content}
+    archivo = uploaded_file
+    
+    chunk_size = 1024 #cambiar en base al maximo de bytes que spooledfile deja en memoria
+    audioFile = bytearray()
+    while True:
+        chunk = await uploaded_file.read(chunk_size)
+        if not chunk:
+            break
+        #print(chunk)
+        audioFile.extend(chunk)
+    wav_io = io.BytesIO(audioFile) #convertir a un buffer en memoria
+    with wave.open(wav_io, "rb") as wav_file:
+        params = wav_file.getparams()
+    save_audio(audioFile,params)
+    return {"filename": uploaded_file.filename, "status": "success", "file": archivo, "params": params}
+
+def save_audio(audio_sample,audio_params):
+    nombre = str(random.randint(1,100))
+    audio = nombre + "audio.wav"
+    file_path = os.path.join(AUDIO_DIR, audio)
+    with wave.open(file_path,"wb") as w:
+        w.setparams(audio_params)
+        w.writeframes(audio_sample)
+    print(f"Audio guardado en {file_path}")
     
 
         
