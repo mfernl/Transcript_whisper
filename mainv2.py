@@ -12,6 +12,12 @@ import uuid
 #import fastprueba
 import subprocess
 import io
+import torch
+import datetime
+import whisper
+import warnings
+warnings.simplefilter(action="ignore",category=FutureWarning)
+LOAD_MODEL = "medium"
 
 app = FastAPI()
 
@@ -81,29 +87,11 @@ def save_audio(audio_sample,audio_params):
         w.setparams(audio_params)
         w.writeframes(audio_sample)
     print(f"Audio guardado en {file_path}")
-
-@app.get("/transcripcion")
-def probando():
-    #fastprueba.generar_transcripcion("audio_recibido","output_transcripcion")
-    """try:
-        result = subprocess.run(["python", "fastprueba.py"], capture_output=True, text=True)
-        output = result.stdout
-        if result.returncode != 0:
-            return {"error": result.stderr}
-        
-        return {"message": "Transcripción completada", "output": output}
-    
-    except Exception as e:
-        return {"error": str(e)}"""
-    return {"message": "Hola fastapi"}
-    
+ 
 @app.put("/upload")
 async def upload_archivo(uploaded_file: UploadFile):
-    #with open(f"./upload_files/{file.filename}","wb") as f:
-        #shutil.copyfileobj(file.file, f)
-    archivo = uploaded_file
-    
-    chunk_size = 1024 #cambiar en base al maximo de bytes que spooledfile deja en memoria
+
+    chunk_size = 1024 
     audioFile = bytearray()
     while True:
         chunk = await uploaded_file.read(chunk_size)
@@ -114,10 +102,15 @@ async def upload_archivo(uploaded_file: UploadFile):
     wav_io = io.BytesIO(audioFile) #convertir a un buffer en memoria
     with wave.open(wav_io, "rb") as wav_file:
         params = wav_file.getparams()
-    save_audio(audioFile,params)
-    return {"filename": uploaded_file.filename, "status": "success", "file": archivo, "params": params}
+    nombre = await save_audio(audioFile,params)
 
-def save_audio(audio_sample,audio_params):
+    input_dir = "audio_recibido"
+    output_dir = "output_transcripcion"
+    out = await generar_transcripcion(nombre,input_dir,output_dir)
+
+    return {"filename": uploaded_file.filename, "status": "success", "params": params, "transcripcion": out}
+
+async def save_audio(audio_sample,audio_params):
     nombre = str(random.randint(1,100))
     audio = nombre + "audio.wav"
     file_path = os.path.join(AUDIO_DIR, audio)
@@ -125,6 +118,34 @@ def save_audio(audio_sample,audio_params):
         w.setparams(audio_params)
         w.writeframes(audio_sample)
     print(f"Audio guardado en {file_path}")
+    return audio
+
+
+async def generar_transcripcion(nombre,input_dir,output_dir,model=LOAD_MODEL):
+    disp = "gpu" if torch.cuda.is_available() else "cpu"
+    print(f"Utilizando la {disp}")
+
+    model = whisper.load_model(model, device=disp)
+    os.makedirs(output_dir,exist_ok=True)
+    archivos_audio = ('.mp3', '.wav', '.mov', '.aac', '.mp4', '.m4a', '.mkv', '.avi', '.flac')
+
+    for file_name in os.listdir(input_dir):
+        if not nombre.lower().endswith(archivos_audio):
+            continue
+        if file_name == nombre:
+            path_archivo = os.path.join(input_dir,nombre)
+
+            print(f"Comienzo de transcripcion del archivo: {nombre}")
+            result = model.transcribe(path_archivo, verbose=False)
+
+            content = "\n".join(segment["text"].strip() for segment in result["segments"])
+            
+            print(f"Terminado de transcribir: {nombre}")
+            return content
+    print (f"Archivo {nombre} no encontrado")
+    return "Archivo no encontrado"
+
+    
     
 
         
