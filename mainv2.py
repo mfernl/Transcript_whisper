@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile
+from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import os
@@ -9,85 +9,79 @@ from collections import namedtuple
 import random
 import shutil
 import uuid
-#import fastprueba
+from datetime import datetime, timedelta
 import subprocess
 import io
 import torch
-import datetime
+from datetime import datetime,timedelta, timezone
+import time
 import whisper
 import warnings
+from jose import jwt, JWTError
 warnings.simplefilter(action="ignore",category=FutureWarning)
+
 LOAD_MODEL = "medium"
+SECRET_KEY = "a72dd5c2bad38471504e1ce24427d30703fdb8c4b8f046058d8d7bb934454270"
+TOKEN_EXP_SECS = 40
+
+db_users = {
+    "articuno" : {
+        "id": 0,
+        "username": "articuno",
+        "password": "12345"
+    }
+}
 
 app = FastAPI()
+
+def get_user(username: str, db: list):
+    if username in db:
+        return db[username]
+    
+def autenticate_user(password: str, password_form: str):
+    if password_form == password:
+        return True
+    return False
+
+def create_token(data: list):
+    data_token = data.copy()
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_EXP_SECS)
+    data_token["exp"] = expiracion.isoformat()
+    print(data_token["exp"])
+    token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
+    return token_jwt
+
+class ExpiredTokenError(Exception):
+    pass
+class InvalidTokenError(Exception):
+    pass
 
 #carpeta donde almacenar el audio
 AUDIO_DIR = "./audio_recibido"
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-audio_data = bytearray()
-
-class ConnectionWS:
-    def __init__(self):
-        self.active_connections = [] #constructor de la clase, inicializo una lista vacía
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket) #nueva conexión entre cliente y servidor
-    async def send_msg(self, msg: str, websocket: WebSocket):
-        await websocket.send_text(msg)
-    async def disconnect(self, websocket: WebSocket):
-        await websocket.close()
-        self.active_connections.remove(websocket)
-
-cnx = ConnectionWS()
-@app.websocket("/conexion")
-async def websocket_endpoint(websocket: WebSocket):
-    await cnx.connect(websocket)
-    print(f"Cliente {cnx.active_connections} conectado")
-
-    audio_data = bytearray()
-    Audio_params = namedtuple("_wave_params",["nchannels","sampwidth","framerate","nframes","comptype","compname"])
-    params_salida = ()
+@app.get("/pruebas")
+async def hola_mundo(access_token):
     try:
-        params = await websocket.receive_text()
-        print(f"Recibido: {params}",websocket)
-        await cnx.send_msg(f"Recibido {params}",websocket)
-        cadena = tuple(params.split(","))
-        audio_params = Audio_params(
-            nchannels=int(cadena[0]),
-            sampwidth=int(cadena[1]),
-            framerate=int(cadena[2]),
-            nframes=int(cadena[3]),
-            comptype=cadena[4],
-            compname=cadena[5]
+        user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+        print(f"Que es esto: {user_data}")
+        expiration_date_str = user_data.get("exp")
+        expiration_date = datetime.fromisoformat(expiration_date_str)
+        if get_user(user_data["username"],db_users) is None:
+            raise InvalidTokenError(
+                "El usuario no es valido"
+            )
+        if datetime.now(timezone.utc) > expiration_date:
+            raise ExpiredTokenError(
+                "El token ha expirado"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=401, detail=str(e)
         )
-        params_salida = audio_params
-        print(f"Parametros en tupla: {params_salida}")
-        #primer intercambio de mensajes, recibo los params y le mando el mensaje al cliente
-        while True:
-            data = await websocket.receive_bytes()
-            #print(f"Recibido: {data}",websocket)
-            audio_data.extend(data) #append el nuevo bloque de audio al resto
-            await cnx.send_msg(f"Recibido bytes",websocket)
-            #prueba para ver si se envía todo
-            control = await websocket.receive_text()
-            #print(f"Recibido : {control}")
-    except WebSocketDisconnect:
-        print(f"Cliente {cnx.active_connections} desconectado")
-        print(f"Parametros en tupla: {params_salida}")
-        save_audio(audio_data,params_salida)
 
-def save_audio(audio_sample,audio_params):
-    #audio = AudioSegment.from_raw(BytesIO(audio_sample))
-    nombre = str(random.randint(1,100))
-    audio = nombre + "audio.wav"
-    file_path = os.path.join(AUDIO_DIR, audio)
-    #audio.export(file_path, format="wav")
-    with wave.open(file_path,"wb") as w:
-        w.setparams(audio_params)
-        w.writeframes(audio_sample)
-    print(f"Audio guardado en {file_path}")
- 
+    return "Hola mundo desde la API"
+
 @app.put("/upload")
 async def upload_archivo(uploaded_file: UploadFile):
 
@@ -145,6 +139,21 @@ async def generar_transcripcion(nombre,input_dir,output_dir,model=LOAD_MODEL):
     print (f"Archivo {nombre} no encontrado")
     return "Archivo no encontrado"
 
+@app.post("/login")
+async def login(username: str, password: str):
+    user_data = get_user(username,db_users)
+    if user_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No User found"
+        )
+    if not autenticate_user(user_data["password"],password):
+        raise HTTPException(
+            status_code=401,
+            detail="Password error"
+        )
+    token = create_token({"username": user_data["username"]})
+    return token
     
     
 
