@@ -18,11 +18,23 @@ import time
 import whisper
 import warnings
 from jose import jwt, JWTError
+import psutil
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
+clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  #cada vez que se inicia el servidor se crea una clave
 LOAD_MODEL = "medium"
-SECRET_KEY = "a72dd5c2bad38471504e1ce24427d30703fdb8c4b8f046058d8d7bb934454270"
-TOKEN_EXP_SECS = 40
+SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
+TOKEN_EXP_SECS = 400
+WHISPER_VERSION = "v20240930"
+CONNECTED_CLIENTS = 0
+QUERIES_RECEIVED = 0
+FILE_TRANSCRIPTIONS = 0
+TIME_SPENT_TRANSCRIPTING = timedelta()
+
+revoked_tokens = set()
+
+server_start_time = datetime.now()
+
 
 db_users = {
     "articuno" : {
@@ -45,7 +57,7 @@ def autenticate_user(password: str, password_form: str):
 
 def create_token(data: list):
     data_token = data.copy()
-    expiracion = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_EXP_SECS)
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_EXP_SECS) #sumarle a la hora actual el timedelta deseado
     data_token["exp"] = expiracion.isoformat()
     print(data_token["exp"])
     token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
@@ -60,11 +72,14 @@ class InvalidTokenError(Exception):
 AUDIO_DIR = "./audio_recibido"
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-@app.get("/pruebas")
-async def hola_mundo(access_token):
+async def compruebo_token(access_token):
     try:
+        if access_token in revoked_tokens:
+            raise InvalidTokenError(
+                "El token ha sido revocado"
+            )
         user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-        print(f"Que es esto: {user_data}")
+        print(f"JWT: {user_data}")
         expiration_date_str = user_data.get("exp")
         expiration_date = datetime.fromisoformat(expiration_date_str)
         if get_user(user_data["username"],db_users) is None:
@@ -80,10 +95,18 @@ async def hola_mundo(access_token):
             status_code=401, detail=str(e)
         )
 
-    return "Hola mundo desde la API"
+    
 
 @app.put("/upload")
 async def upload_archivo(uploaded_file: UploadFile):
+
+    startTranscription = datetime.now()
+
+    global QUERIES_RECEIVED
+    QUERIES_RECEIVED += 1
+
+    global FILE_TRANSCRIPTIONS
+    FILE_TRANSCRIPTIONS += 1
 
     chunk_size = 1024 
     audioFile = bytearray()
@@ -101,6 +124,12 @@ async def upload_archivo(uploaded_file: UploadFile):
     input_dir = "audio_recibido"
     output_dir = "output_transcripcion"
     out = await generar_transcripcion(nombre,input_dir,output_dir)
+
+    endTranscription = datetime.now()
+    spentTranscripting = endTranscription - startTranscription
+
+    global TIME_SPENT_TRANSCRIPTING
+    TIME_SPENT_TRANSCRIPTING = TIME_SPENT_TRANSCRIPTING + spentTranscripting
 
     return {"filename": uploaded_file.filename, "status": "success", "params": params, "transcripcion": out}
 
@@ -141,6 +170,10 @@ async def generar_transcripcion(nombre,input_dir,output_dir,model=LOAD_MODEL):
 
 @app.post("/login")
 async def login(username: str, password: str):
+
+    global QUERIES_RECEIVED
+    QUERIES_RECEIVED += 1
+
     user_data = get_user(username,db_users)
     if user_data is None:
         raise HTTPException(
@@ -153,7 +186,67 @@ async def login(username: str, password: str):
             detail="Password error"
         )
     token = create_token({"username": user_data["username"]})
+    global CONNECTED_CLIENTS
+    CONNECTED_CLIENTS += 1
     return token
+
+@app.post("/logout")
+async def logout(access_token):
+
+    global QUERIES_RECEIVED
+    QUERIES_RECEIVED += 1
+
+    revoked_tokens.add(access_token)
+    return {"message": "logout completado"}
+
+@app.get("/appstatus")
+async def requestAppStatus(access_token):
+
+    global QUERIES_RECEIVED
+    QUERIES_RECEIVED += 1
+
+    await compruebo_token(access_token)
+    current_time = datetime.now()
+    uptime = current_time - server_start_time
+    print(uptime)
+    uptime_str = str(timedelta(seconds=int(uptime.total_seconds())))
+
+    return {
+        "uptime": uptime_str,
+        "whisper_version": WHISPER_VERSION,
+        "connected_clients": CONNECTED_CLIENTS
+    }
+
+@app.get("/hoststatus")
+async def requestHostStatus(access_token):
+
+    global QUERIES_RECEIVED
+    QUERIES_RECEIVED += 1
+
+    await compruebo_token(access_token)
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    return {"Porcentage de uso de la cpu": cpu,
+    "Porcentage de uso de la ram": ram}
+
+@app.get("/appstatistics")
+async def requestAppStatistics(access_token):
+
+    global QUERIES_RECEIVED
+    QUERIES_RECEIVED += 1
+
+    await compruebo_token(access_token)
+
+    return {
+        "Total queries recibidas": QUERIES_RECEIVED,
+        "Total transcripcion de archivos completos": FILE_TRANSCRIPTIONS,
+        "Tiempo total transcribiendo": str(timedelta(seconds=int(TIME_SPENT_TRANSCRIPTING.total_seconds())))
+    }
+
+
+
+    
+
     
     
 
