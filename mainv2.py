@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException, Form
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import os
@@ -36,6 +36,7 @@ revoked_tokens = set()
 
 server_start_time = datetime.now()
 
+sesiones = {}
 
 db_users = {
     "articuno" : {
@@ -73,6 +74,10 @@ class InvalidTokenError(Exception):
 AUDIO_DIR = "./audio_recibido"
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
+#carpeta donde almacenar audio temporalmente
+TEMP_DIR = "./temp_audio"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 async def compruebo_token(access_token):
     try:
         if access_token in revoked_tokens:
@@ -96,7 +101,57 @@ async def compruebo_token(access_token):
             status_code=401, detail=str(e)
         )
 
+
+@app.put("/transmission")
+async def transcript_chunk(session_id: str, uploaded_file: UploadFile):
+
+    #si no existe la sesión la creamos
+    if session_id not in sesiones:
+        sesiones[session_id] = {
+            "transcription": []
+        }
+    print(sesiones)
+    #chunk debe de ser de no más de 2s chunk_size=1024?
+    chunk = await uploaded_file.read()
+    wav_io = io.BytesIO(chunk)
+    with wave.open(wav_io, "rb") as wav_file:
+        params = wav_file.getparams()
+    audio = await save_temp_audio(chunk,params)
+    out = await generar_transcripcion(audio,TEMP_DIR)
+    print(audio)
+
+    sesiones[session_id]["transcription"].append(out)
+
+    path_archivo = os.path.join(TEMP_DIR,audio)
+
+    os.remove(path_archivo)
+
+    return {"session_id": session_id, "transcripcion": out}
+
+
+async def save_temp_audio(audio_sample,audio_params):
+    nombre = str(random.randint(1,100))
+    audio = nombre + "temp.wav"
+    file_path = os.path.join(TEMP_DIR, audio)
+    with wave.open(file_path,"wb") as w:
+        w.setparams(audio_params)
+        w.writeframes(audio_sample)
+    print(f"Audio guardado en {file_path}")
+    return audio
+
+@app.post("/end_session")
+async def end_session(session_id: str):
+
+    if session_id not in sesiones:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found"
+        )
     
+    full_transcription = "".join(sesiones[session_id]["transcription"])
+    del sesiones[session_id]
+    return{ "session_id": session_id, "full_transcription": full_transcription}
+
 
 @app.put("/upload")
 async def upload_archivo(uploaded_file: UploadFile):
@@ -122,9 +177,8 @@ async def upload_archivo(uploaded_file: UploadFile):
         params = wav_file.getparams()
     nombre = await save_audio(audioFile,params)
 
-    input_dir = "audio_recibido"
     output_dir = "output_transcripcion"
-    out = await generar_transcripcion(nombre,input_dir,output_dir)
+    out = await generar_transcripcion(nombre,AUDIO_DIR) #se puede añadir un output_dir
 
     endTranscription = datetime.now()
     spentTranscripting = endTranscription - startTranscription
@@ -145,7 +199,7 @@ async def save_audio(audio_sample,audio_params):
     return audio
 
 
-async def generar_transcripcion(nombre,input_dir,output_dir):
+async def generar_transcripcion(nombre,input_dir):
     disp = "gpu" if torch.cuda.is_available() else "cpu"
     print(f"Utilizando la {disp}")
 
