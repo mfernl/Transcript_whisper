@@ -19,10 +19,11 @@ import whisper
 import warnings
 from jose import jwt, JWTError
 import psutil
+import asyncio
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  #cada vez que se inicia el servidor se crea una clave
-LOAD_MODEL = "medium"
+LOAD_MODEL = "tiny"
 SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
 TOKEN_EXP_SECS = 400
 WHISPER_VERSION = "v20240930"
@@ -144,10 +145,19 @@ async def save_audio(audio_sample,audio_params):
     return audio
 
 
-async def generar_transcripcion(nombre,input_dir,output_dir,model=LOAD_MODEL):
+async def generar_transcripcion(nombre,input_dir,output_dir):
     disp = "gpu" if torch.cuda.is_available() else "cpu"
     print(f"Utilizando la {disp}")
 
+    def transcript():
+        model = whisper.load_model(LOAD_MODEL, device=disp)
+        path_archivo = os.path.join(input_dir,nombre)
+        result = model.transcribe(path_archivo,verbose=False)
+        content = "\n".join(segment["text"].strip() for segment in result["segments"])
+        return content
+    content = await asyncio.to_thread(transcript)
+    return content
+    """
     model = whisper.load_model(model, device=disp)
     os.makedirs(output_dir,exist_ok=True)
     archivos_audio = ('.mp3', '.wav', '.mov', '.aac', '.mp4', '.m4a', '.mkv', '.avi', '.flac')
@@ -161,12 +171,15 @@ async def generar_transcripcion(nombre,input_dir,output_dir,model=LOAD_MODEL):
             print(f"Comienzo de transcripcion del archivo: {nombre}")
             result = model.transcribe(path_archivo, verbose=False)
 
+            print(f"Whisper devuelve: {result}")
+
             content = "\n".join(segment["text"].strip() for segment in result["segments"])
             
             print(f"Terminado de transcribir: {nombre}")
             return content
     print (f"Archivo {nombre} no encontrado")
     return "Archivo no encontrado"
+    """
 
 @app.post("/login")
 async def login(username: str, password: str):
