@@ -140,8 +140,9 @@ async def save_temp_audio(audio_sample,audio_params):
     return audio
 
 @app.post("/end_session")
-async def end_session(session_id: str):
+async def end_session(session_id: str, access_token):
 
+    await compruebo_token(access_token)
     if session_id not in sesiones:
         raise HTTPException(
             status_code=404,
@@ -154,8 +155,9 @@ async def end_session(session_id: str):
 
 
 @app.put("/upload")
-async def upload_archivo(uploaded_file: UploadFile):
+async def upload_archivo(uploaded_file: UploadFile, access_token):
 
+    await compruebo_token(access_token)
     startTranscription = datetime.now()
 
     global QUERIES_RECEIVED
@@ -186,7 +188,7 @@ async def upload_archivo(uploaded_file: UploadFile):
     global TIME_SPENT_TRANSCRIPTING
     TIME_SPENT_TRANSCRIPTING = TIME_SPENT_TRANSCRIPTING + spentTranscripting
 
-    return {"filename": uploaded_file.filename, "status": "success", "params": params, "transcripcion": out}
+    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duracion": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcripcion": out}
 
 async def save_audio(audio_sample,audio_params):
     nombre = str(random.randint(1,100))
@@ -204,11 +206,20 @@ async def generar_transcripcion(nombre,input_dir):
     print(f"Utilizando la {disp}")
 
     def transcript():
+        print(f"usando model: {LOAD_MODEL}")
         model = whisper.load_model(LOAD_MODEL, device=disp)
         path_archivo = os.path.join(input_dir,nombre)
         result = model.transcribe(path_archivo,verbose=False)
-        content = "\n".join(segment["text"].strip() for segment in result["segments"])
-        return content
+        #content = "\n".join(segment["text"].strip() for segment in result["segments"])
+        content_w_timestamps = []
+        for segment in result["segments"]:
+            content_w_timestamps.append({
+                "start": f"{segment["start"]:.2f}",
+                "end": f"{segment["end"]:.2f}",
+                "text": segment["text"].strip()
+            })
+        return content_w_timestamps
+        print(content_w_timestamps)
     content = await asyncio.to_thread(transcript)
     return content
     """
