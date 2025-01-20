@@ -26,6 +26,7 @@ clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  
 LOAD_MODEL = "tiny"
 SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
 TOKEN_EXP_SECS = 400
+RTSESSION_EXP_TOKEN = 3600
 WHISPER_VERSION = "v20240930"
 CONNECTED_CLIENTS = 0
 QUERIES_RECEIVED = 0
@@ -60,6 +61,14 @@ def autenticate_user(password: str, password_form: str):
 def create_token(data: list):
     data_token = data.copy()
     expiracion = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_EXP_SECS) #sumarle a la hora actual el timedelta deseado
+    data_token["exp"] = expiracion.isoformat()
+    print(data_token["exp"])
+    token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
+    return token_jwt
+
+def create_RTtoken(data: list):
+    data_token = data.copy()
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP_TOKEN) #sumarle a la hora actual el timedelta deseado
     data_token["exp"] = expiracion.isoformat()
     print(data_token["exp"])
     token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
@@ -100,17 +109,71 @@ async def compruebo_token(access_token):
         raise HTTPException(
             status_code=401, detail=str(e)
         )
+    
+async def compruebo_RTsession(RTsession_token):
+    try:
+        RT_tokendata = jwt.decode(RTsession_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+        print(f"JWT_RT: {RT_tokendata}")
+        expiration_date_str = RT_tokendata.get("exp")
+        expiration_date = datetime.fromisoformat(expiration_date_str)
+        
+        #comprobar que el token utilizado para hacer el RT token es válido
+        await compruebo_token(RT_tokendata["user_token"])
+
+        if datetime.now(timezone.utc) > expiration_date:
+            raise ExpiredTokenError(
+                "El token ha expirado"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=401, detail=str(e)
+        )
+
+
+@app.get("/crearRTsession")
+async def crear_RTsession(access_token):
+
+    await compruebo_token(access_token)
+    token_RT = create_RTtoken({"user_token": access_token})
+    if token_RT not in sesiones:
+        sesiones[token_RT] = {
+            "user_token": access_token,
+            "transcription": []
+        }
+        print(sesiones)
+        return {"session_id": token_RT}
+    else:
+        raise HTTPException(
+            status_code=400, detail="Sesión duplicada"
+        )
+    
+
+@app.get("/cerrarRTsession")
+async def cerrar_RTsession(access_token, RTsession_token):
+    
+    await compruebo_token(access_token)
+    if RTsession_token not in sesiones:
+        raise HTTPException(
+            status_code=404, detail="No se ha encontrado la sesión"
+        )
+ 
+    full_transcription = "".join(sesiones[RTsession_token]["transcription"])
+    del sesiones[RTsession_token]
+    return{ "session_id": RTsession_token, "full_transcription": full_transcription}
 
 
 @app.put("/transmission")
-async def transcript_chunk(session_id: str, uploaded_file: UploadFile):
+async def transcript_chunk(access_token, RTsession_token, uploaded_file: UploadFile):
 
-    #si no existe la sesión la creamos
-    if session_id not in sesiones:
-        sesiones[session_id] = {
-            "transcription": []
-        }
-    print(sesiones)
+    await compruebo_token(access_token)
+
+    #comprobar el token de sesión 
+    if RTsession_token not in sesiones:
+        raise HTTPException(
+            status_code=404, detail="No se ha encontrado la sesión"
+        )
+    
+    await compruebo_RTsession(RTsession_token)
     #chunk debe de ser de no más de 2s chunk_size=1024?
     chunk = await uploaded_file.read()
     wav_io = io.BytesIO(chunk)
@@ -120,7 +183,7 @@ async def transcript_chunk(session_id: str, uploaded_file: UploadFile):
     out = await generar_transcripcion(audio,TEMP_DIR)
     print(audio)
 
-    sesiones[session_id]["transcription"].append(out)
+    sesiones[RTsession_token]["transcription"].append(out)
 
     path_archivo = os.path.join(TEMP_DIR,audio)
 
@@ -138,20 +201,6 @@ async def save_temp_audio(audio_sample,audio_params):
         w.writeframes(audio_sample)
     print(f"Audio guardado en {file_path}")
     return audio
-
-@app.post("/end_session")
-async def end_session(session_id: str, access_token):
-
-    await compruebo_token(access_token)
-    if session_id not in sesiones:
-        raise HTTPException(
-            status_code=404,
-            detail="Session not found"
-        )
-    
-    full_transcription = "".join(sesiones[session_id]["transcription"])
-    del sesiones[session_id]
-    return{ "session_id": session_id, "full_transcription": full_transcription}
 
 
 @app.put("/upload")
