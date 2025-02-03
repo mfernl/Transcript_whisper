@@ -140,8 +140,10 @@ async def cerrar_RTsession(access_token, RTsession_id):
         raise HTTPException(
             status_code=404, detail="No se ha encontrado la sesión"
         )
- 
-    full_transcription = "".join(sesiones[RTsession_id]["transcription"])
+    full_transcription = ""
+    for segment in sesiones[RTsession_id]["transcription"]:
+        for seg in segment:
+            full_transcription = full_transcription + seg["text"]
     del sesiones[RTsession_id]
     return{ "session_id": RTsession_id, "full_transcription": full_transcription}
 
@@ -156,18 +158,25 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
         raise HTTPException(
             status_code=404, detail="No se ha encontrado la sesión"
         )
+    #comprobar que el token de usuario sea el mismo
+    """
+    if access_token != sesiones[RTsession_id]["user_token"]:
+        raise HTTPException(
+            status_code=401, detail="No autorizado para operar en este canal"
+        )
+    """
     exp_iso = sesiones[RTsession_id]["cierre_inactividad"]
     exp = datetime.fromisoformat(exp_iso)
     #primer caso, se recibe una transmisión antes de que se cierre por inactividad => reseteo de la hora hasta cierre
     if datetime.now(timezone.utc) < exp:
-        expiracion = datetime.now(timezone.utc) + timedelta(seconds=30)#RTSESSION_EXP) 
+        expiracion = datetime.now(timezone.utc) + timedelta(RTSESSION_EXP) 
         exp_iso = expiracion.isoformat()    
         sesiones[RTsession_id]["cierre_inactividad"] = exp_iso
         print(f"nueva hora de cierre: {sesiones[RTsession_id]}")
     #segundo caso, se recibe una transmisión cuando la sesión ha estado inactiva por 1h => devolvemos mensaje de que ha cerrado y llamamos a cerrarRTsession
     if datetime.now(timezone.utc) > exp:
-        await cerrar_RTsession(access_token,RTsession_id)
-            
+        cerrada = await cerrar_RTsession(access_token,RTsession_id)
+        return cerrada
     #chunk debe de ser de no más de 2s chunk_size=1024?
     chunk = await uploaded_file.read()
     wav_io = io.BytesIO(chunk)
@@ -175,9 +184,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
         params = wav_file.getparams()
     audio = await save_temp_audio(chunk,params)
     out = await generar_transcripcion(audio,TEMP_DIR)
-    print(audio)
-    print(out)
-
+    
     sesiones[RTsession_id]["transcription"].append(out)
 
     path_archivo = os.path.join(TEMP_DIR,audio)
@@ -253,7 +260,8 @@ async def generar_transcripcion(nombre,input_dir):
         print(f"usando model: {LOAD_MODEL}")
         model = whisper.load_model(LOAD_MODEL, device=disp)
         path_archivo = os.path.join(input_dir,nombre)
-        result = model.transcribe(path_archivo,verbose=False)
+        result = model.transcribe(path_archivo,language="es",verbose=False)
+        print(result)
         #content = "\n".join(segment["text"].strip() for segment in result["segments"])
         content_w_timestamps = []
         for segment in result["segments"]:
