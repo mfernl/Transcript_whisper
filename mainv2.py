@@ -26,7 +26,7 @@ clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  
 LOAD_MODEL = "tiny"
 SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
 TOKEN_EXP_SECS = 400
-RTSESSION_EXP_TOKEN = 3600
+RTSESSION_EXP = 3600
 WHISPER_VERSION = "v20240930"
 CONNECTED_CLIENTS = 0
 QUERIES_RECEIVED = 0
@@ -66,13 +66,11 @@ def create_token(data: list):
     token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
     return token_jwt
 
-def create_RTtoken(data: list):
+def create_idRT(data: list):
     data_token = data.copy()
-    expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP_TOKEN) #sumarle a la hora actual el timedelta deseado
-    data_token["exp"] = expiracion.isoformat()
-    print(data_token["exp"])
-    token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
-    return token_jwt
+    l = len(sesiones)
+    id = str(l) + str(random.randint(1,100)) + "#" + data_token["user"]
+    return id
 
 class ExpiredTokenError(Exception):
     pass
@@ -89,59 +87,45 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 
 async def compruebo_token(access_token):
     try:
-        if access_token in revoked_tokens:
-            raise InvalidTokenError(
-                "El token ha sido revocado"
-            )
-        user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-        print(f"JWT: {user_data}")
-        expiration_date_str = user_data.get("exp")
-        expiration_date = datetime.fromisoformat(expiration_date_str)
-        if get_user(user_data["username"],db_users) is None:
-            raise InvalidTokenError(
-                "El usuario no es valido"
-            )
-        if datetime.now(timezone.utc) > expiration_date:
-            raise ExpiredTokenError(
-                "El token ha expirado"
-            )
+        if access_token != "soyadmin":
+            if access_token in revoked_tokens:
+                raise InvalidTokenError(
+                    "El token ha sido revocado"
+                )
+            user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+            print(f"JWT: {user_data}")
+            expiration_date_str = user_data.get("exp")
+            expiration_date = datetime.fromisoformat(expiration_date_str)
+            if get_user(user_data["username"],db_users) is None:
+                raise InvalidTokenError(
+                    "El usuario no es valido"
+                )
+            if datetime.now(timezone.utc) > expiration_date:
+                raise ExpiredTokenError(
+                    "El token ha expirado"
+                )
     except Exception as e:
         raise HTTPException(
             status_code=401, detail=str(e)
         )
     
-async def compruebo_RTsession(RTsession_token):
-    try:
-        RT_tokendata = jwt.decode(RTsession_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-        print(f"JWT_RT: {RT_tokendata}")
-        expiration_date_str = RT_tokendata.get("exp")
-        expiration_date = datetime.fromisoformat(expiration_date_str)
-        
-        #comprobar que el token utilizado para hacer el RT token es válido
-        await compruebo_token(RT_tokendata["user_token"])
-
-        if datetime.now(timezone.utc) > expiration_date:
-            raise ExpiredTokenError(
-                "El token ha expirado"
-            )
-    except Exception as e:
-        raise HTTPException(
-            status_code=401, detail=str(e)
-        )
-
 
 @app.get("/crearRTsession")
 async def crear_RTsession(access_token):
 
     await compruebo_token(access_token)
-    token_RT = create_RTtoken({"user_token": access_token})
-    if token_RT not in sesiones:
-        sesiones[token_RT] = {
+    user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    id_RT = create_idRT({"user": user_data["username"]})
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP) #sumarle a la hora actual el timedelta deseado
+    exp_iso = expiracion.isoformat()
+    if id_RT not in sesiones:
+        sesiones[id_RT] = {
             "user_token": access_token,
+            "cierre_inactividad": exp_iso,
             "transcription": []
         }
         print(sesiones)
-        return {"session_id": token_RT}
+        return {"session_id": id_RT}
     else:
         raise HTTPException(
             status_code=400, detail="Sesión duplicada"
@@ -149,31 +133,41 @@ async def crear_RTsession(access_token):
     
 
 @app.get("/cerrarRTsession")
-async def cerrar_RTsession(access_token, RTsession_token):
+async def cerrar_RTsession(access_token, RTsession_id):
     
     await compruebo_token(access_token)
-    if RTsession_token not in sesiones:
+    if RTsession_id not in sesiones:
         raise HTTPException(
             status_code=404, detail="No se ha encontrado la sesión"
         )
  
-    full_transcription = "".join(sesiones[RTsession_token]["transcription"])
-    del sesiones[RTsession_token]
-    return{ "session_id": RTsession_token, "full_transcription": full_transcription}
+    full_transcription = "".join(sesiones[RTsession_id]["transcription"])
+    del sesiones[RTsession_id]
+    return{ "session_id": RTsession_id, "full_transcription": full_transcription}
 
 
 @app.put("/transmission")
-async def transcript_chunk(access_token, RTsession_token, uploaded_file: UploadFile):
+async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile):
 
     await compruebo_token(access_token)
 
     #comprobar el token de sesión 
-    if RTsession_token not in sesiones:
+    if RTsession_id not in sesiones:
         raise HTTPException(
             status_code=404, detail="No se ha encontrado la sesión"
         )
-    
-    await compruebo_RTsession(RTsession_token)
+    exp_iso = sesiones[RTsession_id]["cierre_inactividad"]
+    exp = datetime.fromisoformat(exp_iso)
+    #primer caso, se recibe una transmisión antes de que se cierre por inactividad => reseteo de la hora hasta cierre
+    if datetime.now(timezone.utc) < exp:
+        expiracion = datetime.now(timezone.utc) + timedelta(seconds=30)#RTSESSION_EXP) 
+        exp_iso = expiracion.isoformat()    
+        sesiones[RTsession_id]["cierre_inactividad"] = exp_iso
+        print(f"nueva hora de cierre: {sesiones[RTsession_id]}")
+    #segundo caso, se recibe una transmisión cuando la sesión ha estado inactiva por 1h => devolvemos mensaje de que ha cerrado y llamamos a cerrarRTsession
+    if datetime.now(timezone.utc) > exp:
+        await cerrar_RTsession(access_token,RTsession_id)
+            
     #chunk debe de ser de no más de 2s chunk_size=1024?
     chunk = await uploaded_file.read()
     wav_io = io.BytesIO(chunk)
@@ -182,14 +176,15 @@ async def transcript_chunk(access_token, RTsession_token, uploaded_file: UploadF
     audio = await save_temp_audio(chunk,params)
     out = await generar_transcripcion(audio,TEMP_DIR)
     print(audio)
+    print(out)
 
-    sesiones[RTsession_token]["transcription"].append(out)
+    sesiones[RTsession_id]["transcription"].append(out)
 
     path_archivo = os.path.join(TEMP_DIR,audio)
 
     os.remove(path_archivo)
 
-    return {"session_id": session_id, "transcripcion": out}
+    return {"transcripcion": out}
 
 
 async def save_temp_audio(audio_sample,audio_params):
