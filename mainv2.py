@@ -114,21 +114,27 @@ async def compruebo_token(access_token):
 async def crear_RTsession(access_token):
 
     await compruebo_token(access_token)
-    user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-    id_RT = create_idRT({"user": user_data["username"]})
-    expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP) #sumarle a la hora actual el timedelta deseado
-    exp_iso = expiracion.isoformat()
-    if id_RT not in sesiones:
-        sesiones[id_RT] = {
-            "user_token": access_token,
-            "cierre_inactividad": exp_iso,
-            "transcription": []
-        }
-        print(sesiones)
-        return {"session_id": id_RT}
-    else:
+
+    try:
+        user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+        id_RT = create_idRT({"user": user_data["username"]})
+        expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP) #sumarle a la hora actual el timedelta deseado
+        exp_iso = expiracion.isoformat()
+        if id_RT not in sesiones:
+            sesiones[id_RT] = {
+                "user_token": access_token,
+                "cierre_inactividad": exp_iso,
+                "transcription": []
+            }
+            print(sesiones)
+            return {"session_id": id_RT}
+        else:
+            raise HTTPException(
+                status_code=400, detail="Sesión duplicada"
+            )
+    except JWTError as e:
         raise HTTPException(
-            status_code=400, detail="Sesión duplicada"
+            status_code = 401, detail="Token inválido"
         )
     
 
