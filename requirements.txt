@@ -4,5 +4,12 @@ websockets
 wave
 pydub
 fastapi
-pydantic
 subprocess
+psutil
+jose
+warnings
+datetime
+torch
+io
+random
+collections
