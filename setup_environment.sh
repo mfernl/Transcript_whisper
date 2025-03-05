@@ -42,6 +42,12 @@ sudo apt update && sudo apt install -y ffmpeg || {
     exit 1
 }
 
+log "INFO" "Instalando Uvicorn..."
+if ! pip install -U uvicorn; then
+    log "ERROR" "Error instalando Uvicorn"
+    exit 1
+fi
+
 log "INFO" "Instalando torch, torchvision y torchaudio..."
 if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126; then
     log "ERROR" "Error instalando PyTorch"
