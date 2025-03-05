@@ -23,7 +23,7 @@ import asyncio
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  #cada vez que se inicia el servidor se crea una clave
-LOAD_MODEL = "tiny"
+LOAD_MODEL = "turbo"
 SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
 TOKEN_EXP_SECS = 400
 RTSESSION_EXP = 3600
@@ -234,6 +234,7 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
     wav_io = io.BytesIO(audioFile) #convertir a un buffer en memoria
     with wave.open(wav_io, "rb") as wav_file:
         params = wav_file.getparams()
+        print(params)
     nombre = await save_audio(audioFile,params)
 
     output_dir = "output_transcripcion"
@@ -264,9 +265,9 @@ async def generar_transcripcion(nombre,input_dir):
 
     def transcript():
         print(f"usando model: {LOAD_MODEL}")
-        model = whisper.load_model(LOAD_MODEL, device=disp)
+        model = whisper.load_model(LOAD_MODEL,device="cuda")
         path_archivo = os.path.join(input_dir,nombre)
-        result = model.transcribe(path_archivo,language="es",verbose=False)
+        result = model.transcribe(path_archivo,verbose=False)
         print(result)
         #content = "\n".join(segment["text"].strip() for segment in result["segments"])
         content_w_timestamps = []
@@ -277,32 +278,10 @@ async def generar_transcripcion(nombre,input_dir):
                 "text": segment["text"].strip()
             })
         return content_w_timestamps
-        print(content_w_timestamps)
+        #print(content_w_timestamps)
     content = await asyncio.to_thread(transcript)
     return content
-    """
-    model = whisper.load_model(model, device=disp)
-    os.makedirs(output_dir,exist_ok=True)
-    archivos_audio = ('.mp3', '.wav', '.mov', '.aac', '.mp4', '.m4a', '.mkv', '.avi', '.flac')
 
-    for file_name in os.listdir(input_dir):
-        if not nombre.lower().endswith(archivos_audio):
-            continue
-        if file_name == nombre:
-            path_archivo = os.path.join(input_dir,nombre)
-
-            print(f"Comienzo de transcripcion del archivo: {nombre}")
-            result = model.transcribe(path_archivo, verbose=False)
-
-            print(f"Whisper devuelve: {result}")
-
-            content = "\n".join(segment["text"].strip() for segment in result["segments"])
-            
-            print(f"Terminado de transcribir: {nombre}")
-            return content
-    print (f"Archivo {nombre} no encontrado")
-    return "Archivo no encontrado"
-    """
 
 @app.post("/login")
 async def login(username: str, password: str):
