@@ -311,6 +311,8 @@ async def logout(access_token):
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
+    await compruebo_token(access_token)
+    
     revoked_tokens.add(access_token)
     return {"message": "logout completado"}
 
