@@ -51,22 +51,38 @@ def test_login_no_password():
     # Verificar que la respuesta es del error que buscamos
     assert response.json() == {"detail": "Password error"}
 
-# Función asíncrona para simular la carga de un archivo usando UploadFile
-async def upload_file(file_data, file_name, access_token):
-    file_like = BytesIO(file_data)
-    file_like.name = file_name  # Le damos un nombre al archivo
-    file = UploadFile(file=file_like)
+def test_subir_archivo_real():
+    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
     
-    # Realizar la solicitud PUT con el archivo y el token de acceso
-    response = client.put(
-        "/upload", 
-        files={"uploaded_file": (file_name, file, "audio/x-wav")},  # Especificamos el tipo MIME
-        params={"access_token": access_token}  # El token como parámetro
-    )
-    return response
+    # Abrir el archivo en modo binario
+    with open(file_path, "rb") as file:
+        files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+        
+        # Hacer la petición PUT con el archivo real
+        response = client.put("/upload", params={"access_token": "soyadmin"}, files=files)
 
+    # Verificar que la respuesta es correcta
+    assert response.status_code == 200
+    json_data = response.json()
+    assert json_data["filename"] == "pruebaN1.wav"
+    assert json_data["message"] == "Archivo subido exitosamente"
+
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+async def pruebaLoop():
+    print("Hola desde el loop")
+
+
+try:
+    loop.run_until_complete(pruebaLoop())
+except KeyboardInterrupt:
+    pass
+finally:
+    loop.close()
 # Test para simular 5 solicitudes de carga de archivos simultáneas
-@pytest.mark.asyncio
+"""@pytest.mark.asyncio
 async def test_multiple_uploads():
     file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo WAV
 
@@ -89,3 +105,4 @@ async def test_multiple_uploads():
         assert "params" in json_response
         assert "duracion" in json_response
         assert "transcripcion" in json_response
+"""

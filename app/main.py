@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, HTTPException, Form
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import os
 from pydub import AudioSegment
 from io import BytesIO
@@ -47,7 +48,17 @@ db_users = {
     }
 }
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None)
+
+path_swagger = os.path.join(os.getcwd(),"swagger-ui")
+if not os.path.exists(path_swagger):
+    raise RuntimeError(f"No se encontró la carpeta {path_swagger}")
+
+app.mount("/docs",StaticFiles(directory="swagger-ui",html=True))
+
+@app.get("/openapi.json")
+def get_openapi():
+    return app.openapi()
 
 def get_user(username: str, db: list):
     if username in db:
