@@ -23,6 +23,7 @@ import psutil
 import asyncio
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
+
 clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  #cada vez que se inicia el servidor se crea una clave
 LOAD_MODEL = "turbo"
 SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
@@ -33,6 +34,7 @@ CONNECTED_CLIENTS = 0
 QUERIES_RECEIVED = 0
 FILE_TRANSCRIPTIONS = 0
 TIME_SPENT_TRANSCRIPTING = timedelta()
+MODEL = whisper.load_model(LOAD_MODEL, device="cuda")
 
 revoked_tokens = set()
 
@@ -276,9 +278,9 @@ async def generar_transcripcion(nombre,input_dir):
 
     def transcript():
         print(f"usando model: {LOAD_MODEL}")
-        model = whisper.load_model(LOAD_MODEL,device="cuda")
+        model = whisper.load_model(LOAD_MODEL, device="cuda")#probar a cargar dos modelos o más, 5 no hay espacio
         path_archivo = os.path.join(input_dir,nombre)
-        result = model.transcribe(path_archivo,verbose=False)
+        result = model.transcribe(path_archivo,verbose=False) #cargar el modelo solo una vez al iniciar la API
         print(result)
         #content = "\n".join(segment["text"].strip() for segment in result["segments"])
         content_w_timestamps = []
@@ -354,8 +356,18 @@ async def requestHostStatus(access_token):
     await compruebo_token(access_token)
     cpu = psutil.cpu_percent()
     ram = psutil.virtual_memory().percent
+    total_mem = torch.cuda.get_device_properties(0).total_memory  # Total de la GPU
+    reserved_mem = torch.cuda.memory_reserved(0)  # Memoria reservada por PyTorch
+    allocated_mem = torch.cuda.memory_allocated(0)  # Memoria en uso por PyTorch
+    free_mem = reserved_mem - allocated_mem  # Memoria realmente libre
+
+
     return {"Porcentage de uso de la cpu": cpu,
-    "Porcentage de uso de la ram": ram}
+    "Porcentage de uso de la ram": ram,
+    "Memoria Total (GB)": round(total_mem / 1e9,2),
+    "Memoria Reservada (GB)": round(reserved_mem / 1e9,2),
+    "Memoria Usada por PyTorch (GB)": round(allocated_mem / 1e9,2),
+    "Memoria Libre (GB)": round(free_mem / 1e9,2)}
 
 @app.get("/appstatistics")
 async def requestAppStatistics(access_token):

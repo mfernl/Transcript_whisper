@@ -4,6 +4,8 @@ import asyncio
 from io import BytesIO
 from fastapi import UploadFile
 import pytest
+from httpx import ASGITransport, AsyncClient
+import torch
 
 client = TestClient(app)
 
@@ -51,6 +53,8 @@ def test_login_no_password():
     # Verificar que la respuesta es del error que buscamos
     assert response.json() == {"detail": "Password error"}
 
+
+
 def test_subir_archivo_real():
     file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
     
@@ -64,8 +68,37 @@ def test_subir_archivo_real():
     # Verificar que la respuesta es correcta
     assert response.status_code == 200
     json_data = response.json()
-    assert json_data["filename"] == "pruebaN1.wav"
-    assert json_data["message"] == "Archivo subido exitosamente"
+    print(json_data)
+    print(json_data["filename"])
+    print(json_data["status"])
+    assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+    assert json_data["status"] == "success"
+
+@pytest.mark.asyncio
+async def test_subir_archivo_async():
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
+        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+
+        async def subir_archivo():
+        # Abrir el archivo en modo binario
+            with open(file_path, "rb") as file:
+                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
+
+        response = await asyncio.gather(*[subir_archivo() for _ in range(2)])
+        #response = await subir_archivo()#un audio solo
+        assert response.status_code == 200
+        print("Estoy testando upload")
+        json_data = response.json()
+        print(json_data)
+        print(json_data["filename"])
+        print(json_data["status"])
+        assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+        assert json_data["status"] == "success"
 
 
 loop = asyncio.new_event_loop()
