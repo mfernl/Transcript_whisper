@@ -34,13 +34,16 @@ CONNECTED_CLIENTS = 0
 QUERIES_RECEIVED = 0
 FILE_TRANSCRIPTIONS = 0
 TIME_SPENT_TRANSCRIPTING = timedelta()
-MODEL = whisper.load_model(LOAD_MODEL, device="cuda")
+MODELS = [whisper.load_model(LOAD_MODEL, device="cuda"), whisper.load_model(LOAD_MODEL, device="cuda"), whisper.load_model(LOAD_MODEL, device="cuda")]
+MODEL_TURBO_RT = whisper.load_model(LOAD_MODEL, device="cuda")
 
 revoked_tokens = set()
 
 server_start_time = datetime.now()
 
 sesiones = {}
+
+transcription_queue = asyncio.Queue() #cola para manejar los tres modelos turbo
 
 db_users = {
     "articuno" : {
@@ -151,14 +154,27 @@ async def crear_RTsession(access_token):
         )
     
 
-@app.get("/cerrarRTsession")
-async def cerrar_RTsession(access_token, RTsession_id):
-    
-    await compruebo_token(access_token)
+async def compruebo_cred_sesion(access_token, RTsession_id):
+     #comprobar el token de sesión 
     if RTsession_id not in sesiones:
         raise HTTPException(
             status_code=404, detail="No se ha encontrado la sesión"
         )
+    #comprobar que el token de usuario sea el mismo
+    if access_token != sesiones[RTsession_id]["user_token"]:
+        raise HTTPException(
+            status_code=401, detail="No autorizado para operar en este canal"
+        )
+
+
+@app.get("/cerrarRTsession")
+async def cerrar_RTsession(access_token, RTsession_id):
+    
+    await compruebo_token(access_token)
+
+    #comprobar existencia de sesión así como concordancia del user_token
+    await compruebo_cred_sesion(access_token, RTsession_id)
+
     full_transcription = ""
     for segment in sesiones[RTsession_id]["transcription"]:
         for seg in segment:
@@ -172,18 +188,9 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
     await compruebo_token(access_token)
 
-    #comprobar el token de sesión 
-    if RTsession_id not in sesiones:
-        raise HTTPException(
-            status_code=404, detail="No se ha encontrado la sesión"
-        )
-    #comprobar que el token de usuario sea el mismo
-    """
-    if access_token != sesiones[RTsession_id]["user_token"]:
-        raise HTTPException(
-            status_code=401, detail="No autorizado para operar en este canal"
-        )
-    """
+    #comprobar existencia de sesión así como concordancia del user_token
+    await compruebo_cred_sesion(access_token, RTsession_id)
+   
     exp_iso = sesiones[RTsession_id]["cierre_inactividad"]
     exp = datetime.fromisoformat(exp_iso)
     #primer caso, se recibe una transmisión antes de que se cierre por inactividad => reseteo de la hora hasta cierre
@@ -248,10 +255,12 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
     with wave.open(wav_io, "rb") as wav_file:
         params = wav_file.getparams()
         print(params)
-    nombre = await save_audio(audioFile,params)
+    nombre = await save_temp_audio(audioFile,params)
 
-    output_dir = "output_transcripcion"
-    out = await generar_transcripcion(nombre,AUDIO_DIR) #se puede añadir un output_dir
+    out = await generar_transcripcion(nombre,TEMP_DIR) #Temp dir, archivos se eliminan despues de transcribir
+    path_archivo = os.path.join(TEMP_DIR,nombre)
+
+    os.remove(path_archivo)
 
     endTranscription = datetime.now()
     spentTranscripting = endTranscription - startTranscription
@@ -261,16 +270,10 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
 
     return {"filename": uploaded_file.filename, "status": "success", "params": params, "duracion": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcripcion": out}
 
-async def save_audio(audio_sample,audio_params):
-    nombre = str(random.randint(1,100))
-    audio = nombre + "audio.wav"
-    file_path = os.path.join(AUDIO_DIR, audio)
-    with wave.open(file_path,"wb") as w:
-        w.setparams(audio_params)
-        w.writeframes(audio_sample)
-    print(f"Audio guardado en {file_path}")
-    return audio
 
+async def transcription_worker():
+    #trabajador while true man
+    return True
 
 async def generar_transcripcion(nombre,input_dir):
     disp = "gpu" if torch.cuda.is_available() else "cpu"
@@ -278,9 +281,8 @@ async def generar_transcripcion(nombre,input_dir):
 
     def transcript():
         print(f"usando model: {LOAD_MODEL}")
-        model = whisper.load_model(LOAD_MODEL, device="cuda")#probar a cargar dos modelos o más, 5 no hay espacio
         path_archivo = os.path.join(input_dir,nombre)
-        result = model.transcribe(path_archivo,verbose=False) #cargar el modelo solo una vez al iniciar la API
+        result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False) #cargar el modelo solo una vez al iniciar la API
         print(result)
         #content = "\n".join(segment["text"].strip() for segment in result["segments"])
         content_w_timestamps = []

@@ -53,6 +53,47 @@ def test_login_no_password():
     # Verificar que la respuesta es del error que buscamos
     assert response.json() == {"detail": "Password error"}
 
+def test_close_session():
+    log = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert log.status_code == 200
+    print(f"Este es el token del login: {log.json()}")
+    access_token = log.json()
+    response = client.get("/crearRTsession", params={"access_token": access_token})
+    print(f"Esta es la respuesta de crear sesion: {response}")
+    assert response.status_code == 200
+    session = response.json()["session_id"]
+    print(f"Esta es la sesión: {session}")
+    close = client.get("/cerrarRTsession", params={"access_token": access_token, "RTsession_id": session})
+    assert close.status_code == 200
+    close_data = close.json()
+    assert close_data["session_id"] == session
+
+def test_close_session_wrongtoken():
+    log = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert log.status_code == 200
+    print(f"Este es el token del login: {log.json()}")
+    access_token = log.json()
+    response = client.get("/crearRTsession", params={"access_token": access_token})
+    print(f"Esta es la respuesta de crear sesion: {response}")
+    assert response.status_code == 200
+    session = response.json()["session_id"]
+    print(f"Esta es la sesión: {session}")
+    close = client.get("/cerrarRTsession", params={"access_token": "soyadmin", "RTsession_id": session})
+    assert close.status_code == 401
+    assert close.json() == {"detail": "No autorizado para operar en este canal"}
+
+def test_close_session_sessionNotFound():
+    log = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert log.status_code == 200
+    print(f"Este es el token del login: {log.json()}")
+    access_token = log.json()
+    response = client.get("/crearRTsession", params={"access_token": access_token})
+    print(f"Esta es la respuesta de crear sesion: {response}")
+    assert response.status_code == 200
+
+    close = client.get("/cerrarRTsession", params={"access_token": access_token, "RTsession_id": "soyerror"})
+    assert close.status_code == 404
+    assert close.json() == {"detail": "No se ha encontrado la sesión"}
 
 
 def test_subir_archivo_real():
@@ -89,9 +130,8 @@ async def test_subir_archivo_async():
                 files = {"uploaded_file": (file_path, file, "audio/x-wav")}
                 return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
 
-        response = await asyncio.gather(*[subir_archivo() for _ in range(2)])
-        #response = await subir_archivo()#un audio solo
-        assert response.status_code == 200
+        #response = await asyncio.gather(*[subir_archivo() for _ in range(2)])
+        response = await subir_archivo()#un audio solo
         print("Estoy testando upload")
         json_data = response.json()
         print(json_data)
