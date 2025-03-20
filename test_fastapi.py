@@ -6,6 +6,7 @@ from fastapi import UploadFile
 import pytest
 from httpx import ASGITransport, AsyncClient
 import torch
+import pytest_asyncio
 
 client = TestClient(app)
 
@@ -95,6 +96,12 @@ def test_close_session_sessionNotFound():
     assert close.status_code == 404
     assert close.json() == {"detail": "No se ha encontrado la sesión"}
 
+# Asegurar que los workers de la cola corran en el test
+@pytest.fixture(scope="session", autouse=True)
+async def setup_app():
+    #Ejecutar el lifespan de la app manualmente en los tests
+    async with app.lifespan(app):
+        yield
 
 def test_subir_archivo_real():
     file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
@@ -130,52 +137,12 @@ async def test_subir_archivo_async():
                 files = {"uploaded_file": (file_path, file, "audio/x-wav")}
                 return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
 
-        #response = await asyncio.gather(*[subir_archivo() for _ in range(2)])
-        response = await subir_archivo()#un audio solo
+        response = await asyncio.gather(*[subir_archivo() for _ in range(3)])
+        #response = await subir_archivo()#un audio solo
         print("Estoy testando upload")
-        json_data = response.json()
+        json_data = response[2].json()
         print(json_data)
         print(json_data["filename"])
         print(json_data["status"])
         assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
         assert json_data["status"] == "success"
-
-
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-async def pruebaLoop():
-    print("Hola desde el loop")
-
-
-try:
-    loop.run_until_complete(pruebaLoop())
-except KeyboardInterrupt:
-    pass
-finally:
-    loop.close()
-# Test para simular 5 solicitudes de carga de archivos simultáneas
-"""@pytest.mark.asyncio
-async def test_multiple_uploads():
-    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo WAV
-
-    with open(file_path, "rb") as f:
-        file_data = f.read()
-
-    file_names = [f"file_{i}.wav" for i in range(1)]
-    access_token = "soyadmin"  # Token que vas a pasar en la solicitud
-
-    tasks = [upload_file(file_data, file_name, access_token) for file_name in file_names]
-    responses = await asyncio.gather(*tasks)
-
-    for response in responses:
-        assert response.status_code == 200
-        json_response = response.json()
-        assert "filename" in json_response
-        assert json_response["filename"] in file_names
-        assert "status" in json_response
-        assert json_response["status"] == "success"
-        assert "params" in json_response
-        assert "duracion" in json_response
-        assert "transcripcion" in json_response
-"""

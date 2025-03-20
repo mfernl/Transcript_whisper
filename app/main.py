@@ -21,6 +21,10 @@ import warnings
 from jose import jwt, JWTError
 import psutil
 import asyncio
+from queue import Queue
+from threading import Thread
+import multiprocessing
+import atexit
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 
@@ -34,8 +38,10 @@ CONNECTED_CLIENTS = 0
 QUERIES_RECEIVED = 0
 FILE_TRANSCRIPTIONS = 0
 TIME_SPENT_TRANSCRIPTING = timedelta()
-MODELS = [whisper.load_model(LOAD_MODEL, device="cuda"), whisper.load_model(LOAD_MODEL, device="cuda"), whisper.load_model(LOAD_MODEL, device="cuda")]
+MODELS = [whisper.load_model(LOAD_MODEL, device="cuda") for _ in range(3)] #3 modelos para upload ya que son archivos grandes y uno para RT
 MODEL_TURBO_RT = whisper.load_model(LOAD_MODEL, device="cuda")
+
+upload_streams = [torch.cuda.Stream() for _ in range(3)] #Flujos cuda separados
 
 revoked_tokens = set()
 
@@ -43,7 +49,7 @@ server_start_time = datetime.now()
 
 sesiones = {}
 
-transcription_queue = asyncio.Queue() #cola para manejar los tres modelos turbo
+transcription_queue = Queue() #cola para manejar los tres modelos turbo
 
 db_users = {
     "articuno" : {
@@ -53,7 +59,15 @@ db_users = {
     }
 }
 
+
 app = FastAPI(docs_url=None, redoc_url=None)
+
+semaphore = multiprocessing.Semaphore(1)
+
+@atexit.register
+def cleanup_semaphore():
+    semaphore.release()  # Libera el recurso
+    print("Semáforo liberado.")
 
 path_swagger = os.path.join(os.getcwd(),"swagger-ui")
 if not os.path.exists(path_swagger):
@@ -93,9 +107,9 @@ class ExpiredTokenError(Exception):
 class InvalidTokenError(Exception):
     pass
 
-#carpeta donde almacenar el audio
-AUDIO_DIR = "./audio_recibido"
-os.makedirs(AUDIO_DIR, exist_ok=True)
+#carpeta donde almacenar el audio RT
+RT_DIR = "./temp_audio_RT"
+os.makedirs(RT_DIR, exist_ok=True)
 
 #carpeta donde almacenar audio temporalmente
 TEMP_DIR = "./temp_audio"
@@ -208,22 +222,22 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
     wav_io = io.BytesIO(chunk)
     with wave.open(wav_io, "rb") as wav_file:
         params = wav_file.getparams()
-    audio = await save_temp_audio(chunk,params)
-    out = await generar_transcripcion(audio,TEMP_DIR)
+    audio = await save_temp_audio(chunk,params,RT_DIR)
+    out = await generar_transcripcion_RT(audio,RT_DIR)
     
     sesiones[RTsession_id]["transcription"].append(out)
 
-    path_archivo = os.path.join(TEMP_DIR,audio)
+    path_archivo = os.path.join(RT_DIR,audio)
 
     os.remove(path_archivo)
 
     return {"transcripcion": out}
 
 
-async def save_temp_audio(audio_sample,audio_params):
+async def save_temp_audio(audio_sample,audio_params,DIR):
     nombre = str(random.randint(1,100))
     audio = nombre + "temp.wav"
-    file_path = os.path.join(TEMP_DIR, audio)
+    file_path = os.path.join(DIR, audio)
     with wave.open(file_path,"wb") as w:
         w.setparams(audio_params)
         w.writeframes(audio_sample)
@@ -255,8 +269,7 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
     with wave.open(wav_io, "rb") as wav_file:
         params = wav_file.getparams()
         print(params)
-    nombre = await save_temp_audio(audioFile,params)
-
+    nombre = await save_temp_audio(audioFile,params,TEMP_DIR)
     out = await generar_transcripcion(nombre,TEMP_DIR) #Temp dir, archivos se eliminan despues de transcribir
     path_archivo = os.path.join(TEMP_DIR,nombre)
 
@@ -271,20 +284,70 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
     return {"filename": uploaded_file.filename, "status": "success", "params": params, "duracion": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcripcion": out}
 
 
-async def transcription_worker():
-    #trabajador while true man
-    return True
+def transcription_worker(model,stream):
+    while True:
+        task = transcription_queue.get()
+        if task is None:
+            break  # Salir si la cola cierra
+        path_archivo, response_queue = task  # Extraer datos
+
+        with torch.cuda.stream(stream):  # Asegurar flujo CUDA separado
+            result = model.transcribe(path_archivo,verbose=False)
+            content_w_timestamps = []
+            for segment in result["segments"]:
+                content_w_timestamps.append({
+                    "start": f"{segment["start"]:.2f}",
+                    "end": f"{segment["end"]:.2f}",
+                    "text": segment["text"].strip()
+                })
+
+        response_queue.put(content_w_timestamps)  # Enviar resultado de vuelta
+        transcription_queue.task_done()
+
+
+for i in range(3):
+    thread = Thread(target=transcription_worker, args=(MODELS[i], upload_streams[i]), daemon=True)
+    thread.start()
+
 
 async def generar_transcripcion(nombre,input_dir):
-    disp = "gpu" if torch.cuda.is_available() else "cpu"
-    print(f"Utilizando la {disp}")
 
+    path_archivo = os.path.join(input_dir,nombre)
+    response_queue = Queue()
+    transcription_queue.put((path_archivo, response_queue))
+
+    # Esperar el resultado sin bloquear FastAPI
+    result = await asyncio.to_thread(response_queue.get)
+    return result
+    
+    
+
+
+async def generar_transcripcion_RT(nombre,input_dir):
+    """
     def transcript():
+            print(f"usando model: {LOAD_MODEL}")
+            path_archivo = os.path.join(input_dir,nombre)
+            result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False) #cargar el modelo solo una vez al iniciar la API
+            print(result)
+            #content = "\n".join(segment["text"].strip() for segment in result["segments"])
+            content_w_timestamps = []
+            for segment in result["segments"]:
+                content_w_timestamps.append({
+                    "start": f"{segment["start"]:.2f}",
+                    "end": f"{segment["end"]:.2f}",
+                    "text": segment["text"].strip()
+                })
+            return content_w_timestamps
+            #print(content_w_timestamps)
+        content = await asyncio.to_thread(transcript)
+        return content
+    """
+
+    with torch.cuda.stream(torch.cuda.Stream()):  # Flujo separado
         print(f"usando model: {LOAD_MODEL}")
         path_archivo = os.path.join(input_dir,nombre)
-        result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False) #cargar el modelo solo una vez al iniciar la API
-        print(result)
-        #content = "\n".join(segment["text"].strip() for segment in result["segments"])
+        result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False)
         content_w_timestamps = []
         for segment in result["segments"]:
             content_w_timestamps.append({
@@ -292,10 +355,10 @@ async def generar_transcripcion(nombre,input_dir):
                 "end": f"{segment["end"]:.2f}",
                 "text": segment["text"].strip()
             })
-        return content_w_timestamps
-        #print(content_w_timestamps)
-    content = await asyncio.to_thread(transcript)
-    return content
+    return content_w_timestamps
+    
+    
+    
 
 
 @app.post("/login")
