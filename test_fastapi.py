@@ -7,9 +7,76 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 import torch
 import pytest_asyncio
+from app.main import create_token, create_idRT, sesiones, transcription_queue
+from datetime import datetime, timedelta, timezone
+from app.main import SECRET_KEY
+from jose import jwt, JWTError
+from unittest.mock import patch
 
 client = TestClient(app)
 
+def test_get_openapi():
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+
+def test_token_revocado():
+    login = client.post("/login", params={"username": "articuno", "password": "12345"})
+    token_rev = login.json()
+
+    logout = client.post("/logout", params={"access_token": token_rev})
+
+    assert logout.json() == {"message": "logout completado"}
+
+    login2 = client.post("/login", params={"username": "articuno", "password": "12345"})
+
+    appstatus = client.get("/appstatus", params={"access_token": token_rev})
+
+    assert appstatus.status_code == 401
+    assert appstatus.json() == {"detail": "El token ha sido revocado"}
+
+def test_wrong_user():
+    badusertoken = create_token({"username": "gyarados"})
+
+    appstatus = client.get("/appstatus", params={"access_token": badusertoken})
+
+    assert appstatus.status_code == 401
+    assert appstatus.json() == {"detail": "El usuario no es valido"}
+
+def test_expired_token():
+    data_token = {"username": "deoxys"}
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=-2) #sumarle a la hora actual el timedelta deseado
+    data_token["exp"] = expiracion.isoformat()
+    print(data_token["exp"])
+    token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
+
+    appstatus = client.get("/appstatus", params={"access_token": token_jwt})
+
+    assert appstatus.status_code == 401
+    assert appstatus.json() == {"detail": "El token ha expirado"}
+
+def mock_create_idRT(data):
+    # Forzar un valor estático para id_RT
+    return "0#deoxys"  
+
+def test_duplicated_session():
+
+    # Login para obtener el token de acceso
+    response = client.post("/login", params={"username": "deoxys", "password": "54321"})
+    assert response.status_code == 200  
+    access_token = response.json()
+    
+    #Mock fuerza que el idRT se comporte siempre igual
+    with patch('app.main.create_idRT', side_effect=mock_create_idRT):
+
+        response1 = client.get("/crearRTsession", params={"access_token": access_token})
+        assert response1.status_code == 200
+        assert "session_id" in response1.json()
+
+        response2 = client.get("/crearRTsession", params={"access_token": access_token})
+        
+        assert response2.status_code == 400
+        assert response2.json() == {"detail": "Sesión duplicada"}
 
 def test_login():
 
@@ -68,6 +135,7 @@ def test_close_session():
     assert close.status_code == 200
     close_data = close.json()
     assert close_data["session_id"] == session
+    assert close_data["full_transcription"] == ""
 
 def test_close_session_wrongtoken():
     log = client.post("/login", params={"username": "articuno", "password": "12345"})
@@ -96,13 +164,61 @@ def test_close_session_sessionNotFound():
     assert close.status_code == 404
     assert close.json() == {"detail": "No se ha encontrado la sesión"}
 
-# Asegurar que los workers de la cola corran en el test
-@pytest.fixture(scope="session", autouse=True)
-async def setup_app():
-    #Ejecutar el lifespan de la app manualmente en los tests
-    async with app.lifespan(app):
-        yield
+def test_transmision():
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
+    sesion = client.get("/crearRTsession", params={"access_token": token.json()})
+    rtId = sesion.json()["session_id"]
+    assert sesion.status_code == 200
 
+    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+    
+    # Abrir el archivo en modo binario
+    with open(file_path, "rb") as file:
+        files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+        
+        # Hacer la petición PUT con el archivo real
+        response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+
+    assert response.status_code == 200
+    json_data = response.json()
+    print(f"esta es la json_data {json_data}")
+    assert json_data["transcripcion"][0]["start"] == "0.00"
+
+def test_transmision_w_session_closed():
+    #Crear una sesión con caducidad inmediata para probar el caso que se haya cerrado por inactividad
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
+
+    user_data = jwt.decode(token.json(), key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    id_RT = create_idRT({"user": user_data["username"]})
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=-2) #timedelta negativo para asegurar la caducidad inmediata
+    exp_iso = expiracion.isoformat()
+    if id_RT not in sesiones:
+        sesiones[id_RT] = {
+            "user_token": token.json(),
+            "cierre_inactividad": exp_iso,
+            "transcription": []
+        }
+    
+    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+
+    # Abrir el archivo en modo binario
+    with open(file_path, "rb") as file:
+        files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+        
+        # Hacer la petición PUT con el archivo real
+        response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": id_RT}, files=files)
+
+    assert response.status_code == 200
+    json_data = response.json()
+    print(f"esta es la json_data {json_data}")
+    assert json_data["Detail"] == "Sesión cerrada por inactividad"
+    assert json_data["Session_contents"]["full_transcription"] == ""
+    assert json_data["Session_contents"]["session_id"]== id_RT
+
+
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_subir_archivo_real():
     file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
     
@@ -123,6 +239,7 @@ def test_subir_archivo_real():
     assert json_data["status"] == "success"
 
 @pytest.mark.asyncio
+#@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
@@ -146,3 +263,33 @@ async def test_subir_archivo_async():
         print(json_data["status"])
         assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
         assert json_data["status"] == "success"
+
+def test_appstatus():
+    response = client.get("/appstatus", params = {"access_token": "soyadmin"})
+
+    assert response.status_code == 200
+    json_data = response.json()
+    assert isinstance(json_data["uptime"], str) 
+    assert isinstance(json_data["whisper_version"], str) 
+    assert isinstance(json_data["connected_clients"], int) 
+
+def test_hoststatus():
+    response = client.get("/hoststatus", params = {"access_token": "soyadmin"})
+
+    assert response.status_code == 200
+    json_data = response.json()
+    assert isinstance(json_data["Memoria Reservada (GB)"], float) 
+
+
+def test_appstatistics():
+    response = client.get("/appstatistics", params = {"access_token": "soyadmin"})
+
+    assert response.status_code == 200
+    json_data = response.json()
+    assert isinstance(json_data["Total queries recibidas"], int) 
+    assert isinstance(json_data["Total transcripcion de archivos completos"], int) 
+    assert isinstance(json_data["Tiempo total transcribiendo"], str) 
+
+#tests simplemente para tener un 100 de coverage
+
+

@@ -10,7 +10,6 @@ from collections import namedtuple
 import random
 import shutil
 import uuid
-from datetime import datetime, timedelta
 import subprocess
 import io
 import torch
@@ -56,6 +55,11 @@ db_users = {
         "id": 0,
         "username": "articuno",
         "password": "12345"
+    },
+    "deoxys" : {
+        "id": 1,
+        "username" : "deoxys",
+        "password" : "54321"
     }
 }
 
@@ -68,6 +72,7 @@ semaphore = multiprocessing.Semaphore(1)
 def cleanup_semaphore():
     semaphore.release()  # Libera el recurso
     print("Semáforo liberado.")
+    print("Cierre de API completado.")
 
 path_swagger = os.path.join(os.getcwd(),"swagger-ui")
 if not os.path.exists(path_swagger):
@@ -145,26 +150,21 @@ async def crear_RTsession(access_token):
 
     await compruebo_token(access_token)
 
-    try:
-        user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-        id_RT = create_idRT({"user": user_data["username"]})
-        expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP) #sumarle a la hora actual el timedelta deseado
-        exp_iso = expiracion.isoformat()
-        if id_RT not in sesiones:
-            sesiones[id_RT] = {
-                "user_token": access_token,
-                "cierre_inactividad": exp_iso,
-                "transcription": []
-            }
-            print(sesiones)
-            return {"session_id": id_RT}
-        else:
-            raise HTTPException(
-                status_code=400, detail="Sesión duplicada"
-            )
-    except JWTError as e:
+    user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    id_RT = create_idRT({"user": user_data["username"]})
+    expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP) #sumarle a la hora actual el timedelta deseado
+    exp_iso = expiracion.isoformat()
+    if id_RT not in sesiones:
+        sesiones[id_RT] = {
+            "user_token": access_token,
+            "cierre_inactividad": exp_iso,
+            "transcription": []
+        }
+        print(sesiones)
+        return {"session_id": id_RT}
+    else:
         raise HTTPException(
-            status_code = 401, detail="Token inválido"
+            status_code=400, detail="Sesión duplicada"
         )
     
 
@@ -192,7 +192,7 @@ async def cerrar_RTsession(access_token, RTsession_id):
     full_transcription = ""
     for segment in sesiones[RTsession_id]["transcription"]:
         for seg in segment:
-            full_transcription = full_transcription + seg["text"]
+            full_transcription = full_transcription + seg["text"] #lo que devuelve whisper cuando transcribe está divido en segmentos con texto , voy iterando por esos segmentos para conseguir toda lo transcrito
     del sesiones[RTsession_id]
     return{ "session_id": RTsession_id, "full_transcription": full_transcription}
 
@@ -216,7 +216,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
     #segundo caso, se recibe una transmisión cuando la sesión ha estado inactiva por 1h => devolvemos mensaje de que ha cerrado y llamamos a cerrarRTsession
     if datetime.now(timezone.utc) > exp:
         cerrada = await cerrar_RTsession(access_token,RTsession_id)
-        return cerrada
+        return {"Detail": "Sesión cerrada por inactividad", "Session_contents": cerrada}
     #chunk debe de ser de no más de 2s chunk_size=1024?
     chunk = await uploaded_file.read()
     wav_io = io.BytesIO(chunk)
@@ -293,6 +293,7 @@ def transcription_worker(model,stream):
 
         with torch.cuda.stream(stream):  # Asegurar flujo CUDA separado
             result = model.transcribe(path_archivo,verbose=False)
+            #print(result)
             content_w_timestamps = []
             for segment in result["segments"]:
                 content_w_timestamps.append({
