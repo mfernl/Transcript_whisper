@@ -235,7 +235,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
 
 async def save_temp_audio(audio_sample,audio_params,DIR):
-    nombre = str(random.randint(1,100))
+    nombre = str(random.randint(1,10000))
     audio = nombre + "temp.wav"
     file_path = os.path.join(DIR, audio)
     with wave.open(file_path,"wb") as w:
@@ -292,7 +292,7 @@ def transcription_worker(model,stream):
         path_archivo, response_queue = task  # Extraer datos
 
         with torch.cuda.stream(stream):  # Asegurar flujo CUDA separado
-            result = model.transcribe(path_archivo,verbose=False)
+            result = model.transcribe(path_archivo,verbose=False,language="es")
             #print(result)
             content_w_timestamps = []
             for segment in result["segments"]:
@@ -357,8 +357,6 @@ async def generar_transcripcion_RT(nombre,input_dir):
                 "text": segment["text"].strip()
             })
     return content_w_timestamps
-    
-    
     
 
 

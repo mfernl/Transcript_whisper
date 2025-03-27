@@ -12,8 +12,13 @@ from datetime import datetime, timedelta, timezone
 from app.main import SECRET_KEY
 from jose import jwt, JWTError
 from unittest.mock import patch
+import logging
+import statistics
 
 client = TestClient(app)
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(filename='pruebas.log', encoding='utf-8', level=logging.DEBUG)
 
 def test_get_openapi():
     response = client.get("/openapi.json")
@@ -241,27 +246,50 @@ def test_subir_archivo_real():
 @pytest.mark.asyncio
 #@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
+    usuarios = 5
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
     ) as ac:
-        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+        file_path = "/home/mfllamas/Escritorio/20minBombTrebor.wav"  # Ruta del archivo real
 
         async def subir_archivo():
         # Abrir el archivo en modo binario
             with open(file_path, "rb") as file:
                 files = {"uploaded_file": (file_path, file, "audio/x-wav")}
                 return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
+        
+        gpu_usages = []
 
-        response = await asyncio.gather(*[subir_archivo() for _ in range(3)])
+        async def medir_gpu():
+            #Medir el uso de la memoria 
+            while not test_done:
+                uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
+                gpu_usages.append(uso_gpu)
+                await asyncio.sleep(0.5) 
+
+        startTime = datetime.now()
+        test_done = False
+        task_monitor = asyncio.create_task(medir_gpu())
+        response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
+        test_done = True
+        await task_monitor 
         #response = await subir_archivo()#un audio solo
         print("Estoy testando upload")
-        json_data = response[2].json()
-        print(json_data)
-        print(json_data["filename"])
-        print(json_data["status"])
-        assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+        json_data = response[4].json()
+        endtime = datetime.now()
+        tiempo = endtime - startTime
+        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
+
+        avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
+        peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
+
+        print(f"Tiempo transcribiendo con {usuarios} usuarios: {out}")
+        print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
+        print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
+        
+        assert json_data["filename"] == "/home/mfllamas/Escritorio/20minBombTrebor.wav"
         assert json_data["status"] == "success"
 
 def test_appstatus():
