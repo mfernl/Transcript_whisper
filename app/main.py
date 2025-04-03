@@ -74,11 +74,12 @@ def cleanup_semaphore():
     print("Semáforo liberado.")
     print("Cierre de API completado.")
 
-path_swagger = os.path.join(os.getcwd(),"swagger-ui")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
+path_swagger = os.path.join(BASE_DIR, "swagger-ui")
 if not os.path.exists(path_swagger):
     raise RuntimeError(f"No se encontró la carpeta {path_swagger}")
 
-app.mount("/docs",StaticFiles(directory="swagger-ui",html=True))
+app.mount("/docs",StaticFiles(directory=path_swagger,html=True))
 
 @app.get("/openapi.json")
 def get_openapi():
@@ -325,25 +326,6 @@ async def generar_transcripcion(nombre,input_dir):
 
 
 async def generar_transcripcion_RT(nombre,input_dir):
-    """
-    def transcript():
-            print(f"usando model: {LOAD_MODEL}")
-            path_archivo = os.path.join(input_dir,nombre)
-            result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False) #cargar el modelo solo una vez al iniciar la API
-            print(result)
-            #content = "\n".join(segment["text"].strip() for segment in result["segments"])
-            content_w_timestamps = []
-            for segment in result["segments"]:
-                content_w_timestamps.append({
-                    "start": f"{segment["start"]:.2f}",
-                    "end": f"{segment["end"]:.2f}",
-                    "text": segment["text"].strip()
-                })
-            return content_w_timestamps
-            #print(content_w_timestamps)
-        content = await asyncio.to_thread(transcript)
-        return content
-    """
 
     with torch.cuda.stream(torch.cuda.Stream()):  # Flujo separado
         print(f"usando model: {LOAD_MODEL}")

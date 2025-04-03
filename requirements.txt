@@ -1,15 +1,7 @@
-openai-whisper
-asyncio
 websockets
-wave
 pydub
 fastapi
-subprocess
 psutil
-jose
-warnings
-datetime
+python-jose[cryptography]
 torch
-io
-random
-collections
+

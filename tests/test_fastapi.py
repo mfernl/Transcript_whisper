@@ -246,13 +246,13 @@ def test_subir_archivo_real():
 @pytest.mark.asyncio
 #@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
-    usuarios = 5
+    usuarios = 100
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
     ) as ac:
-        file_path = "/home/mfllamas/Escritorio/20minBombTrebor.wav"  # Ruta del archivo real
+        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
 
         async def subir_archivo():
         # Abrir el archivo en modo binario
@@ -277,7 +277,7 @@ async def test_subir_archivo_async():
         await task_monitor 
         #response = await subir_archivo()#un audio solo
         print("Estoy testando upload")
-        json_data = response[4].json()
+        json_data = response[49].json()
         endtime = datetime.now()
         tiempo = endtime - startTime
         out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
@@ -289,7 +289,7 @@ async def test_subir_archivo_async():
         print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
         print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
         
-        assert json_data["filename"] == "/home/mfllamas/Escritorio/20minBombTrebor.wav"
+        assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
         assert json_data["status"] == "success"
 
 def test_appstatus():

@@ -48,6 +48,12 @@ if ! pip install -U uvicorn; then
     exit 1
 fi
 
+log "INFO" "Instalando Multipart..."
+if ! pip install python-multipart; then
+    log "ERROR" "Error instalando python-multipart"
+    exit 1
+fi
+
 log "INFO" "Instalando torch, torchvision y torchaudio..."
 if ! pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126; then
     log "ERROR" "Error instalando PyTorch"
