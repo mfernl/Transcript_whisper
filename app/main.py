@@ -102,7 +102,7 @@ def create_token(data: list):
     token_jwt = jwt.encode(data_token, key=SECRET_KEY, algorithm="HS256")
     return token_jwt
 
-def create_idRT(data: list):
+async def create_idRT(data: list):
     data_token = data.copy()
     l = len(sesiones)
     id = str(l) + str(random.randint(1,100)) + "#" + data_token["user"]
@@ -152,7 +152,7 @@ async def crear_RTsession(access_token):
     await compruebo_token(access_token)
 
     user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-    id_RT = create_idRT({"user": user_data["username"]})
+    id_RT = await create_idRT({"user": user_data["username"]})
     expiracion = datetime.now(timezone.utc) + timedelta(seconds=RTSESSION_EXP) #sumarle a la hora actual el timedelta deseado
     exp_iso = expiracion.isoformat()
     if id_RT not in sesiones:
@@ -232,7 +232,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
     os.remove(path_archivo)
 
-    return {"transcripcion": out}
+    return {"session": RTsession_id,"transcripcion": out}
 
 
 async def save_temp_audio(audio_sample,audio_params,DIR):
@@ -330,7 +330,7 @@ async def generar_transcripcion_RT(nombre,input_dir):
     with torch.cuda.stream(torch.cuda.Stream()):  # Flujo separado
         print(f"usando model: {LOAD_MODEL}")
         path_archivo = os.path.join(input_dir,nombre)
-        result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False)
+        result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False,language="es")
         content_w_timestamps = []
         for segment in result["segments"]:
             content_w_timestamps.append({

@@ -23,7 +23,7 @@ import asyncio
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 CHUNK = 131072
-FILE = "./prueba2.wav"
+FILE = "/home/mfllamas/Escritorio/pruebaN1.wav"
 OUTPUT_DIR = "../audio_chopeado"
 os.makedirs(OUTPUT_DIR,exist_ok = True)
 print("limpiando anterior chop")

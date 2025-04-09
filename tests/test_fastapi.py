@@ -14,6 +14,7 @@ from jose import jwt, JWTError
 from unittest.mock import patch
 import logging
 import statistics
+import os
 
 client = TestClient(app)
 
@@ -190,13 +191,14 @@ def test_transmision():
     print(f"esta es la json_data {json_data}")
     assert json_data["transcripcion"][0]["start"] == "0.00"
 
-def test_transmision_w_session_closed():
+@pytest.mark.asyncio
+async def test_transmision_w_session_closed():
     #Crear una sesión con caducidad inmediata para probar el caso que se haya cerrado por inactividad
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
 
     user_data = jwt.decode(token.json(), key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-    id_RT = create_idRT({"user": user_data["username"]})
+    id_RT = await create_idRT({"user": user_data["username"]})
     expiracion = datetime.now(timezone.utc) + timedelta(seconds=-2) #timedelta negativo para asegurar la caducidad inmediata
     exp_iso = expiracion.isoformat()
     if id_RT not in sesiones:
@@ -243,54 +245,29 @@ def test_subir_archivo_real():
     assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
     assert json_data["status"] == "success"
 
-@pytest.mark.asyncio
-#@pytest.mark.skip(reason="ahorrar tiempo")
-async def test_subir_archivo_async():
-    usuarios = 100
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
-    ) as ac:
-        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+def test_subir_archivos_RT():
+    rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
+    sesion = client.get("/crearRTsession", params={"access_token": token.json()})
+    rtId = sesion.json()["session_id"]
+    assert sesion.status_code == 200
 
-        async def subir_archivo():
-        # Abrir el archivo en modo binario
-            with open(file_path, "rb") as file:
-                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
-                return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
-        
-        gpu_usages = []
+    archivos = os.listdir(rutaArchivos)
 
-        async def medir_gpu():
-            #Medir el uso de la memoria 
-            while not test_done:
-                uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
-                gpu_usages.append(uso_gpu)
-                await asyncio.sleep(0.5) 
+    print(f"archivos test subir RT: {archivos}")
+    for audio in archivos:
+        file_path = rutaArchivos + audio
+        with open(file_path, "rb") as file:
+            files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+            
+            # Hacer la petición PUT con el archivo real
+            response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
 
-        startTime = datetime.now()
-        test_done = False
-        task_monitor = asyncio.create_task(medir_gpu())
-        response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
-        test_done = True
-        await task_monitor 
-        #response = await subir_archivo()#un audio solo
-        print("Estoy testando upload")
-        json_data = response[49].json()
-        endtime = datetime.now()
-        tiempo = endtime - startTime
-        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
-
-        avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
-        peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
-
-        print(f"Tiempo transcribiendo con {usuarios} usuarios: {out}")
-        print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
-        print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
-        
-        assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
-        assert json_data["status"] == "success"
+        assert response.status_code == 200
+        json_data = response.json()
+        print(f"esta es la json_data {json_data}")
+        assert json_data["transcripcion"][0]["start"] == "0.00"
 
 def test_appstatus():
     response = client.get("/appstatus", params = {"access_token": "soyadmin"})
@@ -318,6 +295,103 @@ def test_appstatistics():
     assert isinstance(json_data["Total transcripcion de archivos completos"], int) 
     assert isinstance(json_data["Tiempo total transcribiendo"], str) 
 
-#tests simplemente para tener un 100 de coverage
+
+@pytest.mark.asyncio
+@pytest.mark.skip(reason="ahorrar tiempo")
+async def test_subir_archivo_async():
+    usuarios = 10
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
+        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+
+        async def subir_archivo():
+        # Abrir el archivo en modo binario
+            with open(file_path, "rb") as file:
+                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
+        
+        gpu_usages = []
+
+        async def medir_gpu():
+            #Medir el uso de la memoria 
+            while not test_done:
+                uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
+                gpu_usages.append(uso_gpu)
+                await asyncio.sleep(0.5) 
+
+        test_done = False
+        task_monitor = asyncio.create_task(medir_gpu())
+        startTime = datetime.now()
+        response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
+        endtime = datetime.now()
+        test_done = True
+        await task_monitor 
+        #response = await subir_archivo()#un audio solo
+        print("Estoy testando upload")
+        tiempo = endtime - startTime
+        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
+
+        avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
+        peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
+
+        print(f"Tiempo transcribiendo con {usuarios} usuarios: {out}")
+        print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
+        print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
+        
+        for resp in response:
+            json_data = resp.json()
+            assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+            assert json_data["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_subir_archivos_varias_sesiones_RT():
+    rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
+    num_sesiones = 100
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
+        
+        archivos = os.listdir(rutaArchivos)
+
+        async def real_time():
+            sesion = await ac.get("/crearRTsession", params={"access_token": token.json()})
+            rtId = sesion.json()["session_id"]
+            print(f"sesión creada: {rtId}")
+            assert sesion.status_code == 200
+
+            responses = []
+
+            for audio in archivos:
+                file_path = rutaArchivos + audio
+                with open(file_path, "rb") as file:
+                    files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                    
+                    # Hacer la petición PUT con el archivo real
+                    res = await ac.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+                    responses.append(res)
+            return responses
+
+        startTime = datetime.now()
+        all_sessions = await asyncio.gather(*[real_time() for _ in range(num_sesiones)])
+        endTime = datetime.now()
+
+        for sesion in all_sessions:
+            for response in sesion:
+                json_data = response.json()
+                print(f"esta es la json_data {json_data}")
+                assert json_data["transcripcion"][0]["start"] == "0.00"
+        print(sesiones)
+
+        tiempo = endTime - startTime
+        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
+        print(f"Tiempo en crear {num_sesiones} sesiones y transcribir: {out}")
+
+
 
 
