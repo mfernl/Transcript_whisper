@@ -1,3 +1,6 @@
+API se encuentra en app/main
+
 Para activar la aplicación:
-1.- source myenv/bin/activate
-2.- uvicorn main:app --host 0.0.0.0 --port 8000
+1.- ejecutrar el archivo setup_environment.sh para instalar las dependencias
+
+2.- ejecutar el archivo start.sh
