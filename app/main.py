@@ -205,7 +205,10 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
     #comprobar existencia de sesión así como concordancia del user_token
     await compruebo_cred_sesion(access_token, RTsession_id)
-   
+
+    if not uploaded_file.filename.lower().endswith(".wav"):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos .wav")
+
     exp_iso = sesiones[RTsession_id]["cierre_inactividad"]
     exp = datetime.fromisoformat(exp_iso)
     #primer caso, se recibe una transmisión antes de que se cierre por inactividad => reseteo de la hora hasta cierre
@@ -236,7 +239,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
 
 async def save_temp_audio(audio_sample,audio_params,DIR):
-    nombre = str(random.randint(1,10000))
+    nombre = str(random.randint(1,10000000000000000000))
     audio = nombre + "temp.wav"
     file_path = os.path.join(DIR, audio)
     with wave.open(file_path,"wb") as w:
@@ -250,6 +253,10 @@ async def save_temp_audio(audio_sample,audio_params,DIR):
 async def upload_archivo(uploaded_file: UploadFile, access_token):
 
     await compruebo_token(access_token)
+
+    if not uploaded_file.filename.lower().endswith(".wav"):
+        raise HTTPException(status_code=400, detail="Solo se permiten archivos .wav")
+
     startTranscription = datetime.now()
 
     global QUERIES_RECEIVED

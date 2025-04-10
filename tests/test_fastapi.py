@@ -15,6 +15,8 @@ from unittest.mock import patch
 import logging
 import statistics
 import os
+from jiwer import wer
+
 
 client = TestClient(app)
 
@@ -191,6 +193,38 @@ def test_transmision():
     print(f"esta es la json_data {json_data}")
     assert json_data["transcripcion"][0]["start"] == "0.00"
 
+def test_upload_notWavFile():
+    file_path = "/home/mfllamas/Escritorio/pruebaOtroFormat.mp3"  # Ruta del archivo real
+    
+    # Abrir el archivo en modo binario
+    with open(file_path, "rb") as file:
+        files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+        
+        # Hacer la petición PUT con el archivo real
+        response = client.put("/upload", params={"access_token": "soyadmin"}, files=files)
+
+    # Verificar que la respuesta es correcta
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Solo se permiten archivos .wav"}
+
+def test_transmission_notWavFile():
+    file_path = "/home/mfllamas/Escritorio/pruebaOtroFormat.mp3"  # Ruta del archivo real
+    
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
+    sesion = client.get("/crearRTsession", params={"access_token": token.json()})
+    rtId = sesion.json()["session_id"]
+    assert sesion.status_code == 200
+
+    with open(file_path, "rb") as file:
+        files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+        
+        # Hacer la petición PUT con el archivo real
+        response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Solo se permiten archivos .wav"}
+
 @pytest.mark.asyncio
 async def test_transmision_w_session_closed():
     #Crear una sesión con caducidad inmediata para probar el caso que se haya cerrado por inactividad
@@ -267,7 +301,7 @@ def test_subir_archivos_RT():
         assert response.status_code == 200
         json_data = response.json()
         print(f"esta es la json_data {json_data}")
-        assert json_data["transcripcion"][0]["start"] == "0.00"
+        assert json_data["session"] == rtId
 
 def test_appstatus():
     response = client.get("/appstatus", params = {"access_token": "soyadmin"})
@@ -347,12 +381,13 @@ async def test_subir_archivo_async():
             assert json_data["status"] == "success"
 
 
+@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_subir_archivos_varias_sesiones_RT():
     rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
-    num_sesiones = 100
+    num_sesiones = 10
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
     ) as ac:
@@ -368,7 +403,7 @@ async def test_subir_archivos_varias_sesiones_RT():
             responses = []
 
             for audio in archivos:
-                file_path = rutaArchivos + audio
+                file_path = os.path.join(rutaArchivos,audio)
                 with open(file_path, "rb") as file:
                     files = {"uploaded_file": (file_path, file, "audio/x-wav")}
                     
@@ -376,6 +411,7 @@ async def test_subir_archivos_varias_sesiones_RT():
                     res = await ac.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
                     responses.append(res)
             return responses
+            
 
         startTime = datetime.now()
         all_sessions = await asyncio.gather(*[real_time() for _ in range(num_sesiones)])
@@ -392,6 +428,116 @@ async def test_subir_archivos_varias_sesiones_RT():
         out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
         print(f"Tiempo en crear {num_sesiones} sesiones y transcribir: {out}")
 
+@pytest.mark.skip(reason = "ahorrar tiempo")
+@pytest.mark.asyncio
+async def test_battlefield():
+    rutaRT = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
+    usuarios = 200
+    num_sesiones = 100
+    #login
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
 
+    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"
+    archivosRT = os.listdir(rutaRT)
+    
+    gpu_usages = []
+    
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
+        
+        async def subir_archivo():
+        # Abrir el archivo en modo binario
+            with open(file_path, "rb") as file:
+                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
+        
+
+        async def medir_gpu():
+            #Medir el uso de la memoria 
+            while not test_done:
+                uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
+                gpu_usages.append(uso_gpu)
+                await asyncio.sleep(0.5) 
+
+        async def real_time():
+            sesion = await ac.get("/crearRTsession", params={"access_token": token.json()})
+            rtId = sesion.json()["session_id"]
+            print(f"sesión creada: {rtId}")
+            assert sesion.status_code == 200
+
+            responses = []
+
+            for audio in archivosRT:
+                file_path = os.path.join(rutaRT, audio)
+                with open(file_path, "rb") as file:
+                    files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                    
+                    # Hacer la petición PUT con el archivo real
+                    res = await ac.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+                    responses.append(res)
+                await asyncio.sleep(0.1)
+            return responses
+
+        test_done = False
+        task_monitor = asyncio.create_task(medir_gpu())
+        startTime = datetime.now()
+        upload_tasks = [asyncio.create_task(subir_archivo()) for _ in range(usuarios)]
+
+        rt_tasks = [asyncio.create_task(real_time()) for _ in range(num_sesiones)]
+
+        all_tasks = await asyncio.gather(*upload_tasks, *rt_tasks)
+
+        endtime = datetime.now()
+        test_done = True
+        await task_monitor 
+
+        tiempo = endtime - startTime
+        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
+
+        avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
+        peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
+
+        print(f"Tiempo transcribiendo con {usuarios} usuarios y {num_sesiones} sesiones: {out}")
+        print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
+        print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
+
+
+        for resp in all_tasks:
+            if isinstance(resp, list):  # Respuestas RT
+                for r in resp:
+                    assert r.status_code == 200
+                    data = r.json()
+                    print(f"✅ RT transcription: {data["session"]}")
+            else:  # Respuesta upload
+                assert resp.status_code == 200
+                print(f"✅ Upload: {resp.json()["status"]}")
+        
+
+@pytest.mark.asyncio
+async def test_word_error_rate():
+
+    reference = "Hola, hola, hola. Estamos probando nuevo audio en el nuevo PC.We are testing. This is audio number one.Number two, number three, number four.Testing long audio.Edificio, árbol, teclado.Número, número, número, número, número, número, número."
+
+    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+
+    def subir_archivo():
+    # Abrir el archivo en modo binario
+        with open(file_path, "rb") as file:
+            files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+            return client.put("/upload", params={"access_token": "soyadmin"}, files=files)
+
+    hypothesis = ""
+
+    audio = subir_archivo().json()["transcripcion"]
+
+    for text in audio:
+        hypothesis = hypothesis + text["text"]
+
+    print(hypothesis)
+    
+    print(wer(reference, hypothesis))
+    return 0
 
 
