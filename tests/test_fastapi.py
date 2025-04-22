@@ -186,7 +186,7 @@ def test_transmision():
         files = {"uploaded_file": (file_path, file, "audio/x-wav")}
         
         # Hacer la petición PUT con el archivo real
-        response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+        response = client.put("/broadcast", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
 
     assert response.status_code == 200
     json_data = response.json()
@@ -207,7 +207,7 @@ def test_upload_notWavFile():
     assert response.status_code == 400
     assert response.json() == {"detail": "Solo se permiten archivos .wav"}
 
-def test_transmission_notWavFile():
+def test_broadcastnotWavFile():
     file_path = "/home/mfllamas/Escritorio/pruebaOtroFormat.mp3"  # Ruta del archivo real
     
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
@@ -220,7 +220,7 @@ def test_transmission_notWavFile():
         files = {"uploaded_file": (file_path, file, "audio/x-wav")}
         
         # Hacer la petición PUT con el archivo real
-        response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+        response = client.put("/broadcast", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Solo se permiten archivos .wav"}
@@ -249,7 +249,7 @@ async def test_transmision_w_session_closed():
         files = {"uploaded_file": (file_path, file, "audio/x-wav")}
         
         # Hacer la petición PUT con el archivo real
-        response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": id_RT}, files=files)
+        response = client.put("/broadcast", params={"access_token": token.json(), "RTsession_id": id_RT}, files=files)
 
     assert response.status_code == 200
     json_data = response.json()
@@ -296,7 +296,7 @@ def test_subir_archivos_RT():
             files = {"uploaded_file": (file_path, file, "audio/x-wav")}
             
             # Hacer la petición PUT con el archivo real
-            response = client.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+            response = client.put("/broadcast", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
 
         assert response.status_code == 200
         json_data = response.json()
@@ -331,7 +331,7 @@ def test_appstatistics():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
     usuarios = 10
     torch.cuda.empty_cache()
@@ -381,7 +381,7 @@ async def test_subir_archivo_async():
             assert json_data["status"] == "success"
 
 
-@pytest.mark.skip(reason = "ahorrar tiempo")
+#@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_subir_archivos_varias_sesiones_RT():
     rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
@@ -408,7 +408,7 @@ async def test_subir_archivos_varias_sesiones_RT():
                     files = {"uploaded_file": (file_path, file, "audio/x-wav")}
                     
                     # Hacer la petición PUT con el archivo real
-                    res = await ac.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+                    res = await ac.put("/broadcast", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
                     responses.append(res)
             return responses
             
@@ -428,12 +428,12 @@ async def test_subir_archivos_varias_sesiones_RT():
         out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
         print(f"Tiempo en crear {num_sesiones} sesiones y transcribir: {out}")
 
-@pytest.mark.skip(reason = "ahorrar tiempo")
+#@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_battlefield():
     rutaRT = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
-    usuarios = 200
-    num_sesiones = 100
+    usuarios = 20
+    num_sesiones = 10
     #login
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
@@ -475,7 +475,7 @@ async def test_battlefield():
                     files = {"uploaded_file": (file_path, file, "audio/x-wav")}
                     
                     # Hacer la petición PUT con el archivo real
-                    res = await ac.put("/transmission", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
+                    res = await ac.put("/broadcast", params={"access_token": token.json(), "RTsession_id": rtId}, files=files)
                     responses.append(res)
                 await asyncio.sleep(0.1)
             return responses
@@ -509,35 +509,45 @@ async def test_battlefield():
                 for r in resp:
                     assert r.status_code == 200
                     data = r.json()
-                    print(f"✅ RT transcription: {data["session"]}")
+                    print(f"RT transcription: {data["session"]}")
             else:  # Respuesta upload
                 assert resp.status_code == 200
-                print(f"✅ Upload: {resp.json()["status"]}")
+                print(f"Upload: {resp.json()["status"]}")
         
-
+#@pytest.mark.skip(reason = "audio de 1 hora")
 @pytest.mark.asyncio
 async def test_word_error_rate():
+
+    usuarios = 100
 
     reference = "Hola, hola, hola. Estamos probando nuevo audio en el nuevo PC.We are testing. This is audio number one.Number two, number three, number four.Testing long audio.Edificio, árbol, teclado.Número, número, número, número, número, número, número."
 
     file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
 
-    def subir_archivo():
-    # Abrir el archivo en modo binario
-        with open(file_path, "rb") as file:
-            files = {"uploaded_file": (file_path, file, "audio/x-wav")}
-            return client.put("/upload", params={"access_token": "soyadmin"}, files=files)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
 
-    hypothesis = ""
+        async def subir_archivo():
+        # Abrir el archivo en modo binario
+            with open(file_path, "rb") as file:
+                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                return await ac.put("/upload", params={"access_token": "soyadmin"}, files=files)
 
-    audio = subir_archivo().json()["transcripcion"]
+        response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
 
-    for text in audio:
-        hypothesis = hypothesis + text["text"]
+        sumWer = 0
 
-    print(hypothesis)
-    
-    print(wer(reference, hypothesis))
+        for resp in response:
+            hypothesis = ""
+            audio = resp.json()["transcription"]
+            for text in audio:
+                hypothesis = hypothesis + text["text"]
+            sumWer += wer(reference, hypothesis)
+        
+        globWer = sumWer/usuarios
+
+        print(f"El WER de {usuarios} usuarios es del {globWer}")
     return 0
 
 

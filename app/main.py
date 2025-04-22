@@ -198,7 +198,7 @@ async def cerrar_RTsession(access_token, RTsession_id):
     return{ "session_id": RTsession_id, "full_transcription": full_transcription}
 
 
-@app.put("/transmission")
+@app.put("/broadcast")
 async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile):
 
     await compruebo_token(access_token)
@@ -289,7 +289,7 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
     global TIME_SPENT_TRANSCRIPTING
     TIME_SPENT_TRANSCRIPTING = TIME_SPENT_TRANSCRIPTING + spentTranscripting
 
-    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duracion": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcripcion": out}
+    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out}
 
 
 def transcription_worker(model,stream):
