@@ -24,6 +24,11 @@ from queue import Queue
 from threading import Thread
 import multiprocessing
 import atexit
+from fastapi import FastAPI, Depends
+from sqlalchemy.orm import Session
+from app.database import get_db, Base, engine
+from app.models import User
+from app.security import hash_password
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 
@@ -49,6 +54,8 @@ server_start_time = datetime.now()
 sesiones = {}
 
 transcription_queue = Queue() #cola para manejar los tres modelos turbo
+
+Base.metadata.create_all(bind=engine)
 
 db_users = {
     "articuno" : {
@@ -250,7 +257,7 @@ async def save_temp_audio(audio_sample,audio_params,DIR):
 
 
 @app.put("/upload")
-async def upload_archivo(uploaded_file: UploadFile, access_token):
+async def upload_archivo(uploaded_file: UploadFile, access_token,db: Session = Depends(get_db)):
 
     await compruebo_token(access_token)
 
@@ -347,6 +354,25 @@ async def generar_transcripcion_RT(nombre,input_dir):
             })
     return content_w_timestamps
     
+
+@app.post("/register")
+async def register(name: str, password: str, db: Session = Depends(get_db)):
+
+    existing = db.query(User).filter_by(username = name).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Already existing user"
+        )
+
+    hashed = hash_password(password)
+
+    new_user = User(username = name, password = hashed)
+    db.add(new_user)
+    db.commit()
+
+    return {"message": "Usuario creado", "id": new_user.id}
 
 
 @app.post("/login")
