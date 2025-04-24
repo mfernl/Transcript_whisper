@@ -28,7 +28,7 @@ from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db, Base, engine
 from app.models import User
-from app.security import hash_password
+from app.security import hash_password, verify_password
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 
@@ -57,20 +57,6 @@ transcription_queue = Queue() #cola para manejar los tres modelos turbo
 
 Base.metadata.create_all(bind=engine)
 
-db_users = {
-    "articuno" : {
-        "id": 0,
-        "username": "articuno",
-        "password": "12345"
-    },
-    "deoxys" : {
-        "id": 1,
-        "username" : "deoxys",
-        "password" : "54321"
-    }
-}
-
-
 app = FastAPI(docs_url=None, redoc_url=None)
 
 semaphore = multiprocessing.Semaphore(1)
@@ -91,15 +77,6 @@ app.mount("/docs",StaticFiles(directory=path_swagger,html=True))
 @app.get("/openapi.json")
 def get_openapi():
     return app.openapi()
-
-def get_user(username: str, db: list):
-    if username in db:
-        return db[username]
-    
-def autenticate_user(password: str, password_form: str):
-    if password_form == password:
-        return True
-    return False
 
 def create_token(data: list):
     data_token = data.copy()
@@ -128,7 +105,7 @@ os.makedirs(RT_DIR, exist_ok=True)
 TEMP_DIR = "./temp_audio"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-async def compruebo_token(access_token):
+async def compruebo_token(access_token,db):
     try:
         if access_token != "soyadmin":
             if access_token in revoked_tokens:
@@ -139,10 +116,13 @@ async def compruebo_token(access_token):
             print(f"JWT: {user_data}")
             expiration_date_str = user_data.get("exp")
             expiration_date = datetime.fromisoformat(expiration_date_str)
-            if get_user(user_data["username"],db_users) is None:
+            existing = db.query(User).filter_by(username = user_data["username"]).first()
+
+            if not existing:
                 raise InvalidTokenError(
                     "El usuario no es valido"
                 )
+
             if datetime.now(timezone.utc) > expiration_date:
                 raise ExpiredTokenError(
                     "El token ha expirado"
@@ -154,9 +134,9 @@ async def compruebo_token(access_token):
     
 
 @app.get("/crearRTsession")
-async def crear_RTsession(access_token):
+async def crear_RTsession(access_token, db: Session = Depends(get_db)):
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
 
     user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
     id_RT = await create_idRT({"user": user_data["username"]})
@@ -177,7 +157,7 @@ async def crear_RTsession(access_token):
     
 
 async def compruebo_cred_sesion(access_token, RTsession_id):
-     #comprobar el token de sesión 
+#comprobar el token de sesión 
     if RTsession_id not in sesiones:
         raise HTTPException(
             status_code=404, detail="No se ha encontrado la sesión"
@@ -190,9 +170,9 @@ async def compruebo_cred_sesion(access_token, RTsession_id):
 
 
 @app.get("/cerrarRTsession")
-async def cerrar_RTsession(access_token, RTsession_id):
+async def cerrar_RTsession(access_token, RTsession_id, db: Session = Depends(get_db)):
     
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
 
     #comprobar existencia de sesión así como concordancia del user_token
     await compruebo_cred_sesion(access_token, RTsession_id)
@@ -206,9 +186,9 @@ async def cerrar_RTsession(access_token, RTsession_id):
 
 
 @app.put("/broadcast")
-async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile):
+async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile, db: Session = Depends(get_db)):
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
 
     #comprobar existencia de sesión así como concordancia del user_token
     await compruebo_cred_sesion(access_token, RTsession_id)
@@ -259,7 +239,7 @@ async def save_temp_audio(audio_sample,audio_params,DIR):
 @app.put("/upload")
 async def upload_archivo(uploaded_file: UploadFile, access_token,db: Session = Depends(get_db)):
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
 
     if not uploaded_file.filename.lower().endswith(".wav"):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos .wav")
@@ -376,45 +356,50 @@ async def register(name: str, password: str, db: Session = Depends(get_db)):
 
 
 @app.post("/login")
-async def login(username: str, password: str):
+async def login(username: str, password: str, db: Session = Depends(get_db)):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    user_data = get_user(username,db_users)
-    if user_data is None:
+    existing = db.query(User).filter_by(username = username).first()
+
+    if not existing:
         raise HTTPException(
             status_code=404,
-            detail="No User found"
+            detail="User not found"
         )
-    if not autenticate_user(user_data["password"],password):
+
+    pw = existing.password
+
+    if not verify_password(password,pw):
         raise HTTPException(
             status_code=401,
             detail="Password error"
         )
-    token = create_token({"username": user_data["username"]})
+    
+    token = create_token({"username": username})
     global CONNECTED_CLIENTS
     CONNECTED_CLIENTS += 1
     return token
 
 @app.post("/logout")
-async def logout(access_token):
+async def logout(access_token,db: Session = Depends(get_db)):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
     
     revoked_tokens.add(access_token)
     return {"message": "logout completado"}
 
 @app.get("/appstatus")
-async def requestAppStatus(access_token):
+async def requestAppStatus(access_token,db: Session = Depends(get_db)):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
     current_time = datetime.now()
     uptime = current_time - server_start_time
     print(uptime)
@@ -427,12 +412,12 @@ async def requestAppStatus(access_token):
     }
 
 @app.get("/hoststatus")
-async def requestHostStatus(access_token):
+async def requestHostStatus(access_token,db: Session = Depends(get_db)):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
     cpu = psutil.cpu_percent()
     ram = psutil.virtual_memory().percent
     total_mem = torch.cuda.get_device_properties(0).total_memory  # Total de la GPU
@@ -449,12 +434,12 @@ async def requestHostStatus(access_token):
     "Memoria Libre (GB)": round(free_mem / 1e9,2)}
 
 @app.get("/appstatistics")
-async def requestAppStatistics(access_token):
+async def requestAppStatistics(access_token,db: Session = Depends(get_db)):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token)
+    await compruebo_token(access_token,db)
 
     return {
         "Total queries recibidas": QUERIES_RECEIVED,
