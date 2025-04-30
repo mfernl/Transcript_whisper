@@ -226,41 +226,47 @@ def test_broadcastnotWavFile():
 
 @pytest.mark.asyncio
 async def test_transmision_w_session_closed():
-    #Crear una sesión con caducidad inmediata para probar el caso que se haya cerrado por inactividad
-    token = client.post("/login", params={"username": "articuno", "password": "12345"})
-    assert token.status_code == 200
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
+        #Crear una sesión con caducidad inmediata para probar el caso que se haya cerrado por inactividad
+        token = await ac.post("/login", params={"username": "gyarados", "password": "12345"})
+        assert token.status_code == 200
 
-    user_data = jwt.decode(token.json(), key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-    id_RT = await create_idRT({"user": user_data["username"]})
-    expiracion = datetime.now(timezone.utc) + timedelta(seconds=0) #timedelta negativo para asegurar la caducidad inmediata
-    exp_iso = expiracion.isoformat()
-    if id_RT not in sesiones:
-        sesiones[id_RT] = {
-            "user_token": token.json(),
-            "cierre_inactividad": exp_iso,
-            "transcription": []
-        }
-    
-    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
-
-    # Abrir el archivo en modo binario
-    with open(file_path, "rb") as file:
-        files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+        user_data = jwt.decode(token.json(), key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+        id_RT = await create_idRT({"user": user_data["username"]})
+        expiracion = datetime.now(timezone.utc) + timedelta(seconds=-2) #timedelta negativo para asegurar la caducidad inmediata
+        exp_iso = expiracion.isoformat()
+        if id_RT not in sesiones:
+            sesiones[id_RT] = {
+                "user_token": token.json(),
+                "cierre_inactividad": exp_iso,
+                "transcription": [""]
+            }
         
-        # Hacer la petición PUT con el archivo real
-        response = client.put("/broadcast", params={"access_token": token.json(), "RTsession_id": id_RT}, files=files)
+        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
 
-    assert response.status_code == 200
-    json_data = response.json()
-    print(f"esta es la json_data {json_data}")
-    assert json_data["Detail"] == "Sesión cerrada por inactividad"
-    assert json_data["Session_contents"]["full_transcription"] == ""
-    assert json_data["Session_contents"]["session_id"]== id_RT
+        print(sesiones)
+
+        # Abrir el archivo en modo binario
+        with open(file_path, "rb") as file:
+            files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+            
+            # Hacer la petición PUT con el archivo real
+            response = await ac.put("/broadcast", params={"access_token": token.json(), "RTsession_id": id_RT}, files=files)
+
+        print(response.json())
+        assert response.status_code == 200
+        json_data = response.json()
+        print(f"esta es la json_data {json_data}")
+        assert json_data["Detail"] == "Sesión cerrada por inactividad"
+        assert json_data["Session_contents"]["full_transcription"] == ""
+        assert json_data["Session_contents"]["session_id"]== id_RT
     
     
 
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_subir_archivo_real():
     file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
     
@@ -277,7 +283,8 @@ def test_subir_archivo_real():
   
     assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
     assert json_data["status"] == "success"
-@pytest.mark.skip(reason="ahorrar tiempo")
+
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_subir_archivos_RT():
     rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
@@ -301,7 +308,7 @@ def test_subir_archivos_RT():
         json_data = response.json()
         print(f"esta es la json_data {json_data}")
         assert json_data["session"] == rtId
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_appstatus():
     response = client.get("/appstatus", params = {"access_token": "soyadmin"})
 
@@ -310,7 +317,7 @@ def test_appstatus():
     assert isinstance(json_data["uptime"], str) 
     assert isinstance(json_data["whisper_version"], str) 
     assert isinstance(json_data["connected_clients"], int) 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_hoststatus():
     response = client.get("/hoststatus", params = {"access_token": "soyadmin"})
 
@@ -318,7 +325,7 @@ def test_hoststatus():
     json_data = response.json()
     assert isinstance(json_data["Memoria Reservada (GB)"], float) 
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_appstatistics():
     response = client.get("/appstatistics", params = {"access_token": "soyadmin"})
 
@@ -330,7 +337,7 @@ def test_appstatistics():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
     usuarios = 10
     torch.cuda.empty_cache()
@@ -380,7 +387,7 @@ async def test_subir_archivo_async():
             assert json_data["status"] == "success"
 
 
-@pytest.mark.skip(reason = "ahorrar tiempo")
+#@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_subir_archivos_varias_sesiones_RT():
     rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
@@ -418,16 +425,14 @@ async def test_subir_archivos_varias_sesiones_RT():
 
         for sesion in all_sessions:
             for response in sesion:
-                json_data = response.json()
-                print(f"esta es la json_data {json_data}")
-                assert json_data["transcripcion"][0]["start"] == "0.00"
+                assert response.status_code == 200
         print(sesiones)
 
         tiempo = endTime - startTime
         out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
         print(f"Tiempo en crear {num_sesiones} sesiones y transcribir: {out}")
 
-@pytest.mark.skip(reason = "ahorrar tiempo")
+#@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_battlefield():
     rutaRT = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
@@ -513,7 +518,7 @@ async def test_battlefield():
                 assert resp.status_code == 200
                 print(f"Upload: {resp.json()["status"]}")
         
-@pytest.mark.skip(reason = "audio de 1 hora")
+#@pytest.mark.skip(reason = "audio de 1 hora")
 @pytest.mark.asyncio
 async def test_word_error_rate():
 

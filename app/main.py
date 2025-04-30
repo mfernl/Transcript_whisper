@@ -12,6 +12,7 @@ import shutil
 import uuid
 import subprocess
 import io
+from io import StringIO
 import torch
 from datetime import datetime,timedelta, timezone
 import time
@@ -27,8 +28,9 @@ import atexit
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db, Base, engine
-from app.models import User
+from app.models import User, Admin, IWord
 from app.security import hash_password, verify_password
+import csv
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 
@@ -105,7 +107,7 @@ os.makedirs(RT_DIR, exist_ok=True)
 TEMP_DIR = "./temp_audio"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-async def compruebo_token(access_token,db):
+async def compruebo_token(access_token):
     try:
         if access_token != "soyadmin":
             if access_token in revoked_tokens:
@@ -116,17 +118,20 @@ async def compruebo_token(access_token,db):
             print(f"JWT: {user_data}")
             expiration_date_str = user_data.get("exp")
             expiration_date = datetime.fromisoformat(expiration_date_str)
-            existing = db.query(User).filter_by(username = user_data["username"]).first()
 
-            if not existing:
-                raise InvalidTokenError(
-                    "El usuario no es valido"
-                )
+            # Obtener db manualmente
+            db_generator = get_db()
+            db: Session = next(db_generator)
+            try:
+                existing = db.query(User).filter_by(username=user_data["username"]).first()
+                if not existing:
+                    raise InvalidTokenError("El usuario no es valido")
 
-            if datetime.now(timezone.utc) > expiration_date:
-                raise ExpiredTokenError(
-                    "El token ha expirado"
-                )
+                if datetime.now(timezone.utc) > expiration_date:
+                    raise ExpiredTokenError("El token ha expirado")
+            finally:
+                db.close()  # Siempre cerrar la sesión
+
     except Exception as e:
         raise HTTPException(
             status_code=401, detail=str(e)
@@ -134,9 +139,9 @@ async def compruebo_token(access_token,db):
     
 
 @app.get("/crearRTsession")
-async def crear_RTsession(access_token, db: Session = Depends(get_db)):
+async def crear_RTsession(access_token):
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
 
     user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
     id_RT = await create_idRT({"user": user_data["username"]})
@@ -170,9 +175,9 @@ async def compruebo_cred_sesion(access_token, RTsession_id):
 
 
 @app.get("/cerrarRTsession")
-async def cerrar_RTsession(access_token, RTsession_id, db: Session = Depends(get_db)):
+async def cerrar_RTsession(access_token, RTsession_id):
     
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
 
     #comprobar existencia de sesión así como concordancia del user_token
     await compruebo_cred_sesion(access_token, RTsession_id)
@@ -186,9 +191,9 @@ async def cerrar_RTsession(access_token, RTsession_id, db: Session = Depends(get
 
 
 @app.put("/broadcast")
-async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile, db: Session = Depends(get_db)):
+async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile):
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
 
     #comprobar existencia de sesión así como concordancia del user_token
     await compruebo_cred_sesion(access_token, RTsession_id)
@@ -237,9 +242,9 @@ async def save_temp_audio(audio_sample,audio_params,DIR):
 
 
 @app.put("/upload")
-async def upload_archivo(uploaded_file: UploadFile, access_token,db: Session = Depends(get_db)):
+async def upload_archivo(uploaded_file: UploadFile, access_token):
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
 
     if not uploaded_file.filename.lower().endswith(".wav"):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos .wav")
@@ -336,7 +341,9 @@ async def generar_transcripcion_RT(nombre,input_dir):
     
 
 @app.post("/register")
-async def register(name: str, password: str, db: Session = Depends(get_db)):
+async def register(adminuname: str,adminpswd: str,name: str, password: str, db: Session = Depends(get_db)):
+
+    await comprueboadmin(adminuname,adminpswd)
 
     existing = db.query(User).filter_by(username = name).first()
 
@@ -383,23 +390,23 @@ async def login(username: str, password: str, db: Session = Depends(get_db)):
     return token
 
 @app.post("/logout")
-async def logout(access_token,db: Session = Depends(get_db)):
+async def logout(access_token):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
     
     revoked_tokens.add(access_token)
     return {"message": "logout completado"}
 
 @app.get("/appstatus")
-async def requestAppStatus(access_token,db: Session = Depends(get_db)):
+async def requestAppStatus(access_token):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
     current_time = datetime.now()
     uptime = current_time - server_start_time
     print(uptime)
@@ -412,12 +419,12 @@ async def requestAppStatus(access_token,db: Session = Depends(get_db)):
     }
 
 @app.get("/hoststatus")
-async def requestHostStatus(access_token,db: Session = Depends(get_db)):
+async def requestHostStatus(access_token):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
     cpu = psutil.cpu_percent()
     ram = psutil.virtual_memory().percent
     total_mem = torch.cuda.get_device_properties(0).total_memory  # Total de la GPU
@@ -434,18 +441,116 @@ async def requestHostStatus(access_token,db: Session = Depends(get_db)):
     "Memoria Libre (GB)": round(free_mem / 1e9,2)}
 
 @app.get("/appstatistics")
-async def requestAppStatistics(access_token,db: Session = Depends(get_db)):
+async def requestAppStatistics(access_token):
 
     global QUERIES_RECEIVED
     QUERIES_RECEIVED += 1
 
-    await compruebo_token(access_token,db)
+    await compruebo_token(access_token)
 
     return {
         "Total queries recibidas": QUERIES_RECEIVED,
         "Total transcripcion de archivos completos": FILE_TRANSCRIPTIONS,
         "Tiempo total transcribiendo": str(timedelta(seconds=int(TIME_SPENT_TRANSCRIPTING.total_seconds())))
     }
+
+async def comprueboadmin(adminUname: str, adminpswd: str):
+    # Obtener db manualmente
+            db_generator = get_db()
+            db: Session = next(db_generator)
+            try:
+                existing = db.query(Admin).filter_by(username = adminUname).first()
+
+                if not existing:
+                   raise HTTPException(
+                        status_code=404,
+                        detail="Admin not found"
+                    )
+
+                pw = existing.password
+
+                if not verify_password(adminpswd,pw):
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Password error"
+                    )
+            finally:
+                db.close()  # Siempre cerrar la sesión
+
+@app.post("/addIWords")
+async def addIWords(uploaded_file: UploadFile, adminUname: str, adminpswd: str, db: Session = Depends(get_db)):
+
+    await comprueboadmin(adminUname,adminpswd)
+
+    if not uploaded_file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Es necesario archivo csv")
+    
+    iwords = await uploaded_file.read()
+    iwordsDecoded = iwords.decode("utf-8")  #Pasamos a String
+    csv_reader = csv.reader(StringIO(iwordsDecoded),delimiter=',')
+
+    added = []
+
+    for row in csv_reader:
+        for word in row:
+            iword = word.strip().lower()
+            existing = db.query(IWord).filter_by(word = iword).first()
+            if not existing:
+                new_iword = IWord(word = iword)
+                db.add(new_iword)
+                added.append(iword)
+    db.commit()
+
+    if added == []:
+        return {"add": "csv_file", "status": "failed", "detail": "all words already in database"}
+    else:
+        return{"add": "csv_file", "status": "success","added words": added}
+
+@app.post("/deleteIWords")
+async def deleteIWords(deleteAll: int,uploaded_file: UploadFile, adminUname: str, adminpswd: str, db: Session = Depends(get_db)):
+
+    await comprueboadmin(adminUname,adminpswd)
+
+    if deleteAll == 1:
+
+        db.query(IWord).delete()
+        db.commit()
+
+        is_empty = db.query(IWord).count() == 0
+        if not is_empty:
+            return{"delete": "all", "status": "failed", "detail": "Error trying to delete table IWord"}
+        else:
+            return{"delete": "all","status":"success"}
+        
+    elif deleteAll == 0:
+        if not uploaded_file.filename.lower().endswith(".csv"):
+            raise HTTPException(status_code=400, detail="Needed csv file")
+    
+        iwords = await uploaded_file.read()
+        iwordsDecoded = iwords.decode("utf-8")  #Pasamos a String
+        csv_reader = csv.reader(StringIO(iwordsDecoded),delimiter=',')
+
+        deleted = []
+
+        for row in csv_reader:
+            for word in row:
+                iword = word.strip().lower()
+                existing = db.query(IWord).filter_by(word = iword).first()
+                if existing:
+                    db.delete(existing)
+                    deleted.append(iword)
+        db.commit()
+
+        if deleted == []:
+            return {"delete": "csv_file", "status": "failed", "detail": "all words already deleted or not added yet."}
+        else:
+            return{"delete": "csv_file", "status": "success","deleted words": deleted}
+
+
+
+
+
+
 
 
 
