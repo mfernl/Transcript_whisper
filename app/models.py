@@ -20,7 +20,7 @@ class IWord(Base):
     word = Column(String,unique=True,nullable=False)
     count = Column(Integer, default=0)
     lastDetectedAt = Column(DateTime,default=datetime.now)
-    lastDetectedBy = Column(Integer,ForeignKey("users.id"),default=0)
+    lastDetectedBy = Column(Integer,ForeignKey("users.username"),default=0)
     transcriptionType = Column(String,default="upload")
 
     user = relationship("User", backref="last_detection")
@@ -29,10 +29,10 @@ class WordDetectionLog(Base):
     __tablename__ = "word_detection_log"
 
     id = Column(Integer, primary_key=True, index=True)
-    word_id = Column(Integer, ForeignKey("iwords.id"))
+    word = Column(String,ForeignKey("iwords.word"))
     detectedAt = Column(DateTime, default=datetime.now)
-    detectedBy = Column(Integer,ForeignKey("users.id"))
+    detectedBy = Column(String,ForeignKey("users.username"))
     transcriptionType = Column(String,default="upload")
 
-    word = relationship("IWord", backref="word_detections")
+    wordD = relationship("IWord", backref="word_detections")
     user = relationship("User", backref="user_detections")

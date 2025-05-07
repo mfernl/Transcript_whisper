@@ -27,10 +27,12 @@ import multiprocessing
 import atexit
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-from app.database import get_db, Base, engine
-from app.models import User, Admin, IWord
+from app.database import get_db, Base, engine, SessionLocal
+from app.models import User, Admin, IWord, WordDetectionLog
 from app.security import hash_password, verify_password
 import csv
+from contextlib import asynccontextmanager
+import threading
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 
@@ -46,6 +48,8 @@ FILE_TRANSCRIPTIONS = 0
 TIME_SPENT_TRANSCRIPTING = timedelta()
 MODELS = [whisper.load_model(LOAD_MODEL, device="cuda") for _ in range(3)] #3 modelos para upload ya que son archivos grandes y uno para RT
 MODEL_TURBO_RT = whisper.load_model(LOAD_MODEL, device="cuda")
+IWORDS_CACHE = []
+IWORDS_LOCK = threading.Lock()
 
 upload_streams = [torch.cuda.Stream() for _ in range(3)] #Flujos cuda separados
 
@@ -59,15 +63,27 @@ transcription_queue = Queue() #cola para manejar los tres modelos turbo
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(docs_url=None, redoc_url=None)
-
-semaphore = multiprocessing.Semaphore(1)
-
-@atexit.register
-def cleanup_semaphore():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db = SessionLocal()
+    load_iwords(db)
+    db.close()
+    yield
     semaphore.release()  # Libera el recurso
     print("Semáforo liberado.")
     print("Cierre de API completado.")
+
+
+app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
+
+semaphore = multiprocessing.Semaphore(1)
+
+def load_iwords(db:Session):
+    global IWORDS_CACHE
+    new_words = [word.word for word in db.query(IWord).all()]
+    print(f"new words: {new_words}")
+    with IWORDS_LOCK: #evitamos que una transcripción lea la lista cuando alguien la está modificando con addIwords o deleteIwords
+        IWORDS_CACHE = new_words
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
 path_swagger = os.path.join(BASE_DIR, "swagger-ui")
@@ -242,7 +258,7 @@ async def save_temp_audio(audio_sample,audio_params,DIR):
 
 
 @app.put("/upload")
-async def upload_archivo(uploaded_file: UploadFile, access_token):
+async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDetection: bool):
 
     await compruebo_token(access_token)
 
@@ -278,11 +294,37 @@ async def upload_archivo(uploaded_file: UploadFile, access_token):
     endTranscription = datetime.now()
     spentTranscripting = endTranscription - startTranscription
 
+    if(iWordDetection):
+        palabras_detectadas = []
+        with IWORDS_LOCK:
+                palabras_cache = IWORDS_CACHE
+
+        for segment in out:
+            db = SessionLocal()
+
+            for palabra in palabras_cache:
+                if palabra in segment["text"]:
+                    if palabra not in palabras_detectadas:
+                        palabras_detectadas.append(palabra)
+
+                    palabra_db = db.query(IWord).filter_by(word=palabra).first()
+                    if palabra_db:
+                        user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+                        user_db = db.query(User).filter_by(username=user_data["username"]).first()
+                        if user_db:
+                            # registrar log
+                            log = WordDetectionLog(
+                                word=palabra_db.word,
+                                detectedAt=datetime.now(),
+                                detectedBy=user_db.username
+                            )
+                            db.add(log)
+            db.commit()
+
     global TIME_SPENT_TRANSCRIPTING
     TIME_SPENT_TRANSCRIPTING = TIME_SPENT_TRANSCRIPTING + spentTranscripting
 
-    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out}
-
+    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out, "palabras detectadas": palabras_detectadas}
 
 def transcription_worker(model,stream):
     while True:
@@ -477,7 +519,7 @@ async def comprueboadmin(adminUname: str, adminpswd: str):
             finally:
                 db.close()  # Siempre cerrar la sesión
 
-@app.post("/addIWords")
+@app.post("/addIWordsCsv")
 async def addIWords(uploaded_file: UploadFile, adminUname: str, adminpswd: str, db: Session = Depends(get_db)):
 
     await comprueboadmin(adminUname,adminpswd)
@@ -500,13 +542,16 @@ async def addIWords(uploaded_file: UploadFile, adminUname: str, adminpswd: str, 
                 db.add(new_iword)
                 added.append(iword)
     db.commit()
+    db.close()
+
+    load_iwords(db)
 
     if added == []:
         return {"add": "csv_file", "status": "failed", "detail": "all words already in database"}
     else:
         return{"add": "csv_file", "status": "success","added words": added}
 
-@app.post("/deleteIWords")
+@app.post("/deleteIWordsCsv")
 async def deleteIWords(deleteAll: int,uploaded_file: UploadFile, adminUname: str, adminpswd: str, db: Session = Depends(get_db)):
 
     await comprueboadmin(adminUname,adminpswd)
@@ -515,6 +560,8 @@ async def deleteIWords(deleteAll: int,uploaded_file: UploadFile, adminUname: str
 
         db.query(IWord).delete()
         db.commit()
+        db.close()
+        load_iwords(db)
 
         is_empty = db.query(IWord).count() == 0
         if not is_empty:
@@ -540,7 +587,9 @@ async def deleteIWords(deleteAll: int,uploaded_file: UploadFile, adminUname: str
                     db.delete(existing)
                     deleted.append(iword)
         db.commit()
+        db.close()
 
+        load_iwords(db)
         if deleted == []:
             return {"delete": "csv_file", "status": "failed", "detail": "all words already deleted or not added yet."}
         else:
