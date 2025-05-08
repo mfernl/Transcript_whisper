@@ -33,6 +33,7 @@ from app.security import hash_password, verify_password
 import csv
 from contextlib import asynccontextmanager
 import threading
+from pydub import AudioSegment
 warnings.simplefilter(action="ignore",category=FutureWarning)
 
 
@@ -207,7 +208,7 @@ async def cerrar_RTsession(access_token, RTsession_id):
 
 
 @app.put("/broadcast")
-async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile):
+async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile, iWordDetection: bool):
 
     await compruebo_token(access_token)
 
@@ -232,9 +233,19 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
     #chunk debe de ser de no más de 2s chunk_size=1024?
     chunk = await uploaded_file.read()
     wav_io = io.BytesIO(chunk)
-    with wave.open(wav_io, "rb") as wav_file:
-        params = wav_file.getparams()
-    audio = await save_temp_audio(chunk,params,RT_DIR)
+    try:
+        original_audio = AudioSegment.from_file(wav_io, format="wav")
+        pcm_audio = original_audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+
+        # Convertir a BytesIO para mantenerlo en memoria
+        wav_buffer = io.BytesIO()
+        pcm_audio.export(wav_buffer, format="wav")
+        wav_buffer.seek(0)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando el audio: {str(e)}")
+   
+    audio = await save_temp_audio(wav_buffer.getvalue(),RT_DIR)
     out = await generar_transcripcion_RT(audio,RT_DIR)
     
     sesiones[RTsession_id]["transcription"].append(out)
@@ -243,16 +254,47 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
     os.remove(path_archivo)
 
-    return {"session": RTsession_id,"transcripcion": out}
+    palabras_detectadas = []
+
+    if(iWordDetection):
+        with IWORDS_LOCK:
+                palabras_cache = IWORDS_CACHE
+
+        for segment in out:
+            db = SessionLocal()
+
+            for palabra in palabras_cache:
+                if palabra in segment["text"].lower():
+                    if palabra not in palabras_detectadas:
+                        palabras_detectadas.append(palabra)
+
+                    palabra_db = db.query(IWord).filter_by(word=palabra).first()
+                    if palabra_db:
+                        user_data = jwt.decode(access_token, key=SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+                        user_db = db.query(User).filter_by(username=user_data["username"]).first()
+                        if user_db:
+                            # registrar log
+                            log = WordDetectionLog(
+                                word=palabra_db.word,
+                                detectedAt=datetime.now(),
+                                detectedBy=user_db.username
+                            )
+                            db.add(log)
+                            palabra_db.lastDetectedAt = datetime.now()
+                            palabra_db.lastDetectedBy = user_db.username
+
+            db.commit()
 
 
-async def save_temp_audio(audio_sample,audio_params,DIR):
+    return {"session": RTsession_id,"transcripcion": out, "palabras_detectadas": palabras_detectadas}
+
+
+async def save_temp_audio(audio_bytes,DIR):
     nombre = str(random.randint(1,10000000000000000000))
     audio = nombre + "temp.wav"
     file_path = os.path.join(DIR, audio)
-    with wave.open(file_path,"wb") as w:
-        w.setparams(audio_params)
-        w.writeframes(audio_sample)
+    with open(file_path,"wb") as w:
+        w.write(audio_bytes)
     print(f"Audio guardado en {file_path}")
     return audio
 
@@ -273,19 +315,28 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
     global FILE_TRANSCRIPTIONS
     FILE_TRANSCRIPTIONS += 1
 
-    chunk_size = 1024 
-    audioFile = bytearray()
-    while True:
-        chunk = await uploaded_file.read(chunk_size)
-        if not chunk:
-            break
-        #print(chunk)
-        audioFile.extend(chunk)
+    audioFile = await uploaded_file.read()
     wav_io = io.BytesIO(audioFile) #convertir a un buffer en memoria
-    with wave.open(wav_io, "rb") as wav_file:
-        params = wav_file.getparams()
-        print(params)
-    nombre = await save_temp_audio(audioFile,params,TEMP_DIR)
+    try:
+        original_audio = AudioSegment.from_file(wav_io, format="wav")
+        pcm_audio = original_audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+
+        # Convertir a BytesIO para mantenerlo en memoria
+        wav_buffer = io.BytesIO()
+        pcm_audio.export(wav_buffer, format="wav")
+        wav_buffer.seek(0) #mueve el puntero al inicio para leer el archivo 
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando el audio: {str(e)}")
+   
+    params = {
+        "channels": pcm_audio.channels,
+        "sample_width": pcm_audio.sample_width,
+        "frame_rate": pcm_audio.frame_rate,
+        "frame_count": len(pcm_audio.get_array_of_samples())
+    }
+
+    nombre = await save_temp_audio(wav_buffer.getvalue(),TEMP_DIR)
     out = await generar_transcripcion(nombre,TEMP_DIR) #Temp dir, archivos se eliminan despues de transcribir
     path_archivo = os.path.join(TEMP_DIR,nombre)
 
@@ -293,9 +344,9 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
 
     endTranscription = datetime.now()
     spentTranscripting = endTranscription - startTranscription
+    palabras_detectadas = []
 
     if(iWordDetection):
-        palabras_detectadas = []
         with IWORDS_LOCK:
                 palabras_cache = IWORDS_CACHE
 
@@ -303,7 +354,7 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
             db = SessionLocal()
 
             for palabra in palabras_cache:
-                if palabra in segment["text"]:
+                if palabra in segment["text"].lower():
                     if palabra not in palabras_detectadas:
                         palabras_detectadas.append(palabra)
 
@@ -319,6 +370,9 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
                                 detectedBy=user_db.username
                             )
                             db.add(log)
+                            palabra_db.lastDetectedAt = datetime.now()
+                            palabra_db.lastDetectedBy = user_db.username
+
             db.commit()
 
     global TIME_SPENT_TRANSCRIPTING
@@ -474,13 +528,18 @@ async def requestHostStatus(access_token):
     allocated_mem = torch.cuda.memory_allocated(0)  # Memoria en uso por PyTorch
     free_mem = reserved_mem - allocated_mem  # Memoria realmente libre
 
+    result = subprocess.run(["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"],capture_output=True,text=True)
+    temperatura = f"{result.stdout.strip()}°C"
+
+
 
     return {"Porcentage de uso de la cpu": cpu,
     "Porcentage de uso de la ram": ram,
     "Memoria Total (GB)": round(total_mem / 1e9,2),
     "Memoria Reservada (GB)": round(reserved_mem / 1e9,2),
     "Memoria Usada por PyTorch (GB)": round(allocated_mem / 1e9,2),
-    "Memoria Libre (GB)": round(free_mem / 1e9,2)}
+    "Memoria Libre (GB)": round(free_mem / 1e9,2),
+    "Temperatura de la GPU": temperatura}
 
 @app.get("/appstatistics")
 async def requestAppStatistics(access_token):
