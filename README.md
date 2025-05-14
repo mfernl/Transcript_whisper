@@ -1,7 +1,7 @@
-##Transcriptor en tiempo real y diferido
+# Transcriptor en tiempo real y diferido
 En este proyecto he utilizado [![WhisperAI](https://github.com/openai/whisper)] para crear una API Rest que reciba peticiones de transcripción de audios en formato .wav y devuelva sus transcripciones.
 
-##Setup
+## Setup
 La estructura de este repositorio es la siguiente:
 ```
 .
@@ -22,7 +22,7 @@ La estructura de este repositorio es la siguiente:
 ├── setup_environment.sh         #Script para instalar las dependencias.
 └── start.sh                     #Script para iniciar la API.
 ```
-##Start
+## Poniendo en marcha la API
 Para ejecutar la aplicación se debe primero ejecutar el archivo:
 ```
 ./setupt_environment.sh
@@ -31,3 +31,8 @@ Una vez instaladas las dependencias, iniciar la aplicación con:
 ```
 ./start.sh
 ```
+
+## Cómo usar la API
+Una vez encendido el servidor en el equipo local, acceda a la url definida para la interfaz interactiva swagger [http://127.0.0.1:8000/docs/#/]. Dentro de esta url se debería mostrar la siguiente interfaz:
+![imagen](https://github.com/user-attachments/assets/c9f37544-d27a-48fd-90b8-f28ae69c4e90)
+
