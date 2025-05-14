@@ -45,11 +45,11 @@ Al darle a **Execute** si se ha hecho de manera exitosa la petición, se mostrar
 Se listan todos los endpoints de la API, su dirección y su funcionamiento.
 
 | Método HTTP | Endpoint | Descripción | Request Parameters | Response body |
-|-------------|----------|-----------|-------------|--------------|---------------|
+|-------------|----------|-------------|--------------------|---------------|
 | GET | `/openapi.json` | Devuelve metadatos de la API para el swagger-ui | - | - |
 | GET | `/crearRTsession` | Crea una nueva instancia de sesión RT | access_token | String "RT_Session" |
-| GET | `/api/pokemon/:id` | READ | Devuelve un Pokémon específico | - | Objeto JSON |
-| PUT | `/api/pokemon/:id` | UPDATE | Modifica un Pokémon existente | Objeto JSON | Objeto JSON |
-| DELETE | `/api/pokemon/:id` | DELETE | Elimina un Pokémon específico | - | Objeto JSON |
+| GET | `/api/pokemon/:id` | Devuelve un Pokémon específico | - | Objeto JSON |
+| PUT | `/api/pokemon/:id` | Modifica un Pokémon existente | Objeto JSON | Objeto JSON |
+| DELETE | `/api/pokemon/:id` | Elimina un Pokémon específico | - | Objeto JSON |
 
 
