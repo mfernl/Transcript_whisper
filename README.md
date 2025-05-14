@@ -39,6 +39,17 @@ Una vez encendido el servidor en el equipo local, acceda a la url definida para 
 En la interfaz podemos ver cada uno de los endpoints de la API, para mandar una petición a cada endpoint simplemente debemos hacer click en el endpoint deseado y rellenar los campos necesarios para lanzar una petición a la API:
 ![Endpoint](https://github.com/user-attachments/assets/675d67fd-8573-4631-9519-f72d4c5d9ee2)
 
-Al darle a **Execute** si se ha hecho de manera exitosa la petición 
+Al darle a **Execute** si se ha hecho de manera exitosa la petición, se mostrará en el apartado de **Respuesta** el código de respuesta y el body de esta.
+
+## Enpoints de la API
+Se listan todos los endpoints de la API, su dirección y su funcionamiento.
+
+| Método HTTP | Endpoint | Descripción | Request Parameters | Response body |
+|-------------|----------|-----------|-------------|--------------|---------------|
+| GET | `/openapi.json` | Devuelve metadatos de la API para el swagger-ui | - | - |
+| GET | `/crearRTsession` | Crea una nueva instancia de sesión RT | access_token | String "RT_Session" |
+| GET | `/api/pokemon/:id` | READ | Devuelve un Pokémon específico | - | Objeto JSON |
+| PUT | `/api/pokemon/:id` | UPDATE | Modifica un Pokémon existente | Objeto JSON | Objeto JSON |
+| DELETE | `/api/pokemon/:id` | DELETE | Elimina un Pokémon específico | - | Objeto JSON |
 
 
