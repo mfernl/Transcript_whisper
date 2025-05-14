@@ -34,5 +34,11 @@ Una vez instaladas las dependencias, iniciar la aplicación con:
 
 ## Cómo usar la API
 Una vez encendido el servidor en el equipo local, acceda a la url definida para la interfaz interactiva swagger [http://127.0.0.1:8000/docs/#/]. Dentro de esta url se debería mostrar la siguiente interfaz:
-![imagen](https://github.com/user-attachments/assets/c9f37544-d27a-48fd-90b8-f28ae69c4e90)
+![Intefaz Interactiva](https://github.com/user-attachments/assets/c9f37544-d27a-48fd-90b8-f28ae69c4e90)
+
+En la interfaz podemos ver cada uno de los endpoints de la API, para mandar una petición a cada endpoint simplemente debemos hacer click en el endpoint deseado y rellenar los campos necesarios para lanzar una petición a la API:
+![Endpoint](https://github.com/user-attachments/assets/675d67fd-8573-4631-9519-f72d4c5d9ee2)
+
+Al darle a **Execute** si se ha hecho de manera exitosa la petición 
+
 
