@@ -16,13 +16,14 @@ import logging
 import statistics
 import os
 from jiwer import wer
-from app.models import User
-from app.database import SessionLocal
+from app.models import User, Admin, IWord
+from app.database import SessionLocal, Base, engine
 from app.security import hash_password
 
 
 client = TestClient(app)
 
+Base.metadata.create_all(bind=engine)
 db = SessionLocal()
 existing = db.query(User).filter_by(username = "articuno").first()
 if not existing:
@@ -36,6 +37,12 @@ if not existing:
     db.add(new_user)
     db.commit()
     db.close()
+existing = db.query(Admin).filter_by(username = "Marco").first()
+if not existing:
+    new_admin = Admin(username = "Marco", password = hash_password("12345"))
+    db.add(new_admin)
+    db.commit()
+    db.close
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename='pruebas.log', encoding='utf-8', level=logging.DEBUG)
@@ -297,7 +304,7 @@ def test_subir_archivo_real():
     # Verificar que la respuesta es correcta
     assert response.status_code == 200
     json_data = response.json()
-  
+
     assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
     assert json_data["status"] == "success"
 
@@ -387,7 +394,6 @@ async def test_subir_archivo_async():
         test_done = True
         await task_monitor 
         #response = await subir_archivo()#un audio solo
-        print("Estoy testando upload")
         tiempo = endtime - startTime
         out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
 
@@ -570,5 +576,124 @@ async def test_word_error_rate():
 
         print(f"El WER de {usuarios} usuarios es del {globWer}")
     return 0
+
+def test_admin_add_not_csv_iWords():
+    csv = "../assets/controlador_gpu.py"
+
+    with open(csv, "rb") as file:
+        files = {"uploaded_file": (csv, file, "type=text/csv")}
+        response = client.post("/addIWordsCsv", params={"adminUname": "Marco", "adminpswd": "12345"}, files = files)
+
+
+    print(response.json())
+    assert response.status_code == 400
+    assert response.json() == {"detail": "csv file required"}
+
+def test_admin_add_iWords():
+    csv = "../assets/add.csv"
+
+    with open(csv, "rb") as file:
+        files = {"uploaded_file": (csv, file, "type=text/csv")}
+        response = client.post("/addIWordsCsv", params={"adminUname": "Marco", "adminpswd": "12345"}, files = files)
+
+
+    print(response.json())
+    assert response.status_code == 200
+    assert response.json()["add"] == "csv_file"
+
+
+@pytest.mark.asyncio
+#@pytest.mark.skip(reason="ahorrar tiempo")
+async def test_subir_archivo_async_word_detection():
+    usuarios = 10
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    token = client.post("/login", params={"username": "articuno", "password": "12345"})
+    assert token.status_code == 200
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+    ) as ac:
+        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+
+        async def subir_archivo():
+        # Abrir el archivo en modo binario
+            with open(file_path, "rb") as file:
+                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                return await ac.put("/upload", params={"access_token": token.json(), "iWordDetection": True}, files=files)
+        
+        gpu_usages = []
+
+        async def medir_gpu():
+            #Medir el uso de la memoria 
+            while not test_done:
+                uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
+                gpu_usages.append(uso_gpu)
+                await asyncio.sleep(0.5) 
+
+        test_done = False
+        task_monitor = asyncio.create_task(medir_gpu())
+        startTime = datetime.now()
+        response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
+        endtime = datetime.now()
+        test_done = True
+        await task_monitor 
+        #response = await subir_archivo()#un audio solo
+        tiempo = endtime - startTime
+        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
+
+        avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
+        peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
+
+        print(f"Tiempo transcribiendo con {usuarios} usuarios: {out}")
+        print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
+        print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
+        
+        for resp in response:
+            json_data = resp.json()
+            assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+            assert json_data["status"] == "success"
+            print(json_data["aviso_terminos_detectados"])
+            assert json_data["aviso_terminos_detectados"][0] == "número"
+
+
+#@pytest.mark.skip(reason="ahorrar tiempo")
+def test_admin_delete_not_csv_iWords():
+    csv = "../assets/controlador_gpu.py"
+
+    with open(csv, "rb") as file:
+        files = {"uploaded_file": (csv, file, "type=text/csv")}
+        response = client.post("/deleteIWordsCsv", params={"deleteAll": 0,"adminUname": "Marco", "adminpswd": "12345"}, files = files)
+
+
+    print(response.json())
+    assert response.status_code == 400
+    assert response.json() == {"detail": "csv file required"}
+
+#@pytest.mark.skip(reason="ahorrar tiempo")
+def test_admin_delete_iWords():
+    csv = "../assets/delete.csv"
+
+    with open(csv, "rb") as file:
+        files = {"uploaded_file": (csv, file, "type=text/csv")}
+        response = client.post("/deleteIWordsCsv", params={"deleteAll": 0,"adminUname": "Marco", "adminpswd": "12345"}, files = files)
+
+    print(f"\n printeo el DELETE {response.json()}\n")
+    assert response.status_code == 200
+    assert response.json()["delete"] == "csv_file"
+
+#@pytest.mark.skip(reason="ahorrar tiempo")
+def test_admin_delete_all_iWords():
+    csv = "../assets/delete.csv"
+
+    with open(csv, "rb") as file:
+        files = {"uploaded_file": (csv, file, "type=text/csv")}
+        response = client.post("/deleteIWordsCsv", params={"deleteAll": 1,"adminUname": "Marco", "adminpswd": "12345"}, files = files)
+
+
+    print(response.json())
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+
 
 

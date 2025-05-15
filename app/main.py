@@ -64,7 +64,7 @@ transcription_queue = Queue() #cola para manejar los tres modelos turbo
 
 Base.metadata.create_all(bind=engine)
 
-@asynccontextmanager
+@asynccontextmanager #al iniciar la aplicación se ejecuta hasta yield, y justo antes de cerrar se ejecuta el resto
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     load_iwords(db)
@@ -230,7 +230,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
     if datetime.now(timezone.utc) > exp:
         cerrada = await cerrar_RTsession(access_token,RTsession_id)
         return {"Detail": "Sesión cerrada por inactividad", "Session_contents": cerrada}
-    #chunk debe de ser de no más de 2s chunk_size=1024?
+    #chunk pequeño en teoria
     chunk = await uploaded_file.read()
     wav_io = io.BytesIO(chunk)
     try:
@@ -244,7 +244,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error procesando el audio: {str(e)}")
-   
+
     audio = await save_temp_audio(wav_buffer.getvalue(),RT_DIR)
     out = await generar_transcripcion_RT(audio,RT_DIR)
     
@@ -277,16 +277,19 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
                             log = WordDetectionLog(
                                 word=palabra_db.word,
                                 detectedAt=datetime.now(),
-                                detectedBy=user_db.username
+                                detectedBy=user_db.username,
+                                transcriptionType="broadcast:" + RTsession_id
                             )
                             db.add(log)
                             palabra_db.lastDetectedAt = datetime.now()
                             palabra_db.lastDetectedBy = user_db.username
+                            palabra_db.transcriptionType = "broadcast:" + RTsession_id
 
             db.commit()
+        return {"session": RTsession_id,"transcripcion": out, "aviso_terminos_detectados": palabras_detectadas}
 
 
-    return {"session": RTsession_id,"transcripcion": out, "palabras_detectadas": palabras_detectadas}
+    return {"session": RTsession_id,"transcripcion": out}
 
 
 async def save_temp_audio(audio_bytes,DIR):
@@ -328,7 +331,7 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error procesando el audio: {str(e)}")
-   
+
     params = {
         "channels": pcm_audio.channels,
         "sample_width": pcm_audio.sample_width,
@@ -345,6 +348,9 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
     endTranscription = datetime.now()
     spentTranscripting = endTranscription - startTranscription
     palabras_detectadas = []
+
+    global TIME_SPENT_TRANSCRIPTING
+    TIME_SPENT_TRANSCRIPTING = TIME_SPENT_TRANSCRIPTING + spentTranscripting
 
     if(iWordDetection):
         with IWORDS_LOCK:
@@ -374,12 +380,12 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
                             palabra_db.lastDetectedBy = user_db.username
 
             db.commit()
+        return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out, "aviso_terminos_detectados": palabras_detectadas}
 
-    global TIME_SPENT_TRANSCRIPTING
-    TIME_SPENT_TRANSCRIPTING = TIME_SPENT_TRANSCRIPTING + spentTranscripting
+    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out}
 
-    return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out, "palabras detectadas": palabras_detectadas}
 
+    
 def transcription_worker(model,stream):
     while True:
         task = transcription_queue.get()
@@ -563,7 +569,7 @@ async def comprueboadmin(adminUname: str, adminpswd: str):
                 existing = db.query(Admin).filter_by(username = adminUname).first()
 
                 if not existing:
-                   raise HTTPException(
+                    raise HTTPException(
                         status_code=404,
                         detail="Admin not found"
                     )
@@ -584,7 +590,7 @@ async def addIWords(uploaded_file: UploadFile, adminUname: str, adminpswd: str, 
     await comprueboadmin(adminUname,adminpswd)
 
     if not uploaded_file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Es necesario archivo csv")
+        raise HTTPException(status_code=400, detail="csv file required")
     
     iwords = await uploaded_file.read()
     iwordsDecoded = iwords.decode("utf-8")  #Pasamos a String
@@ -624,13 +630,13 @@ async def deleteIWords(deleteAll: int,uploaded_file: UploadFile, adminUname: str
 
         is_empty = db.query(IWord).count() == 0
         if not is_empty:
-            return{"delete": "all", "status": "failed", "detail": "Error trying to delete table IWord"}
+            return{"delete": "all", "status": "failed", "detail": "Error trying to delete table IWord contents"}
         else:
             return{"delete": "all","status":"success"}
         
     elif deleteAll == 0:
         if not uploaded_file.filename.lower().endswith(".csv"):
-            raise HTTPException(status_code=400, detail="Needed csv file")
+            raise HTTPException(status_code=400, detail="csv file required")
     
         iwords = await uploaded_file.read()
         iwordsDecoded = iwords.decode("utf-8")  #Pasamos a String
