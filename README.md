@@ -1,5 +1,5 @@
 # Transcriptor en tiempo real y diferido
-En este proyecto he utilizado [![WhisperAI](https://github.com/openai/whisper)] para crear una API Rest que reciba peticiones de transcripción de audios en formato .wav y devuelva sus transcripciones.
+En este proyecto he utilizado [![WhisperAI](https://github.com/openai/whisper)] para crear una API Rest en un equipo con sistema operativo [!Linux], con tarjeta gráfica (GPU) de [!NVIDIA], que reciba peticiones de transcripción de audios en formato .wav y devuelva sus transcripciones.
 
 ## Setup
 La estructura de este repositorio es la siguiente:
@@ -48,8 +48,16 @@ Se listan todos los endpoints de la API, su dirección y su funcionamiento.
 |-------------|----------|-------------|--------------------|---------------|
 | GET | `/openapi.json` | Devuelve metadatos de la API para el swagger-ui | - | - |
 | GET | `/crearRTsession` | Crea una nueva instancia de sesión RT | access_token | String "RT_Session" |
-| GET | `/api/pokemon/:id` | Devuelve un Pokémon específico | - | Objeto JSON |
-| PUT | `/api/pokemon/:id` | Modifica un Pokémon existente | Objeto JSON | Objeto JSON |
-| DELETE | `/api/pokemon/:id` | Elimina un Pokémon específico | - | Objeto JSON |
+| GET | `/cerrarRTsession` | Cierra un canal de sesión RT | access_token, RTSessionID | Objeto JSON |
+| PUT | `/broadcast` | Sube un archivo de audio en formato .wav para transcribir a través de un canal de sesión RT | access_token, RTSessionID, Word Detection (True/False), UploadFile | Objeto JSON |
+| PUT | `/upload` | Sube un archivo de audio en formato .wav para transcribir | access_token, Word Detection (True/False), UploadFile | Objeto JSON |
+| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
+| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
+| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
+| GET | `/openapi.json` | Devuelve metadatos de la API para el swagger-ui | - | - |
+| GET | `/crearRTsession` | Crea una nueva instancia de sesión RT | access_token | String "RT_Session" |
+| GET | `/cerrarRTsession` | Cierra un canal de sesión RT | access_token, RTSessionID | Objeto JSON |
+| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
+| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
 
 
