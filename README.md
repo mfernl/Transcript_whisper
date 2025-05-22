@@ -52,12 +52,12 @@ Se listan todos los endpoints de la API, su dirección y su funcionamiento.
 | PUT | `/broadcast` | Sube un archivo de audio en formato .wav para transcribir a través de un canal de sesión RT | access_token, RTSessionID, Word Detection (True/False), UploadFile | Objeto JSON |
 | PUT | `/upload` | Sube un archivo de audio en formato .wav para transcribir | access_token, Word Detection (True/False), UploadFile | Objeto JSON |
 | POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
-| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
-| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
-| GET | `/openapi.json` | Devuelve metadatos de la API para el swagger-ui | - | - |
-| GET | `/crearRTsession` | Crea una nueva instancia de sesión RT | access_token | String "RT_Session" |
-| GET | `/cerrarRTsession` | Cierra un canal de sesión RT | access_token, RTSessionID | Objeto JSON |
-| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
-| POST | `/register` | Registra un nuevo usuario en la base de datos | AdminUsername, AdminPasswords, Username, Password | Objeto JSON |
+| POST | `/login` | Inicio de sesión para un usuario | Username, Password | String "access_token" |
+| POST | `/logout` | Cierra sesión para un usuario | access_token | String "logout completado |
+| GET | `/appstatus` | Devuelve datos como el Uptime, versión de Whisper y el número de clientes conectados | access_token | Objeto JSON |
+| GET | `/hoststatus` | Devuelve datos del dispositivo servidor como el uso de la CPU, GPU o RAM | access_token | Objeto JSON |
+| GET | `/appstatistics` | Devuelve datos sobre el uso de la aplicación como número de querys recibidas o tiempo total transcribiendo | access_token | Objeto JSON |
+| POST | `/addIWordsCsv` | Añade nuevos términos importantes a la base de datos para la detección de términos importantes en las transcripciones | AdminUsername, AdminPasswords | Objeto JSON |
+| POST | `/deleteIWordsCsv` | Elimina términos importantes de la base de datos o elimina todos los términos de la base de datos | AdminUsername, AdminPasswords, DeleteAll ( 1 o 0 ) | Objeto JSON |
 
 
