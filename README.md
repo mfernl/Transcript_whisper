@@ -1,5 +1,5 @@
 # Transcriptor en tiempo real y diferido
-En este proyecto he utilizado [![WhisperAI](https://github.com/openai/whisper)] para crear una API Rest en un equipo con sistema operativo [!Linux], con tarjeta gráfica (GPU) de [!NVIDIA], que reciba peticiones de transcripción de audios en formato .wav y devuelva sus transcripciones.
+En este proyecto he utilizado [![WhisperAI](https://github.com/openai/whisper)] para crear una API Rest en un equipo con sistema operativo **Linux**, con tarjeta gráfica (GPU) de **NVIDIA**, que reciba peticiones de transcripción de audios en formato .wav y devuelva sus transcripciones.
 
 ## Setup
 La estructura de este repositorio es la siguiente:
