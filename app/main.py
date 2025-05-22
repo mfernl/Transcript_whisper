@@ -449,11 +449,19 @@ async def generar_transcripcion_RT(nombre,input_dir):
         result = MODEL_TURBO_RT.transcribe(path_archivo,verbose=False,language="es")
         content_w_timestamps = []
         for segment in result["segments"]:
-            content_w_timestamps.append({
-                "start": f"{segment["start"]:.2f}",
-                "end": f"{segment["end"]:.2f}",
-                "text": segment["text"].strip()
-            })
+            if es_segmento_valido(segment):     
+                #print(f"\n ################################################## \n {segment} \n ################################################## \n") 
+                content_w_timestamps.append({
+                    "start": f"{segment["start"]:.2f}",
+                    "end": f"{segment["end"]:.2f}",
+                    "text": segment["text"].strip()
+                })
+            else:
+                content_w_timestamps.append({
+                    "start": f"{segment["start"]:.2f}",
+                    "end": f"{segment["end"]:.2f}",
+                    "text": "..."
+                })
     return content_w_timestamps
     
 
