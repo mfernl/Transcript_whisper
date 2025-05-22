@@ -398,15 +398,30 @@ def transcription_worker(model,stream):
             #print(result)
             content_w_timestamps = []
             for segment in result["segments"]:
-                content_w_timestamps.append({
-                    "start": f"{segment["start"]:.2f}",
-                    "end": f"{segment["end"]:.2f}",
-                    "text": segment["text"].strip()
-                })
-
+                #print(f"\n {segment}")
+                if es_segmento_valido(segment):
+                    
+                    content_w_timestamps.append({
+                        "start": f"{segment["start"]:.2f}",
+                        "end": f"{segment["end"]:.2f}",
+                        "text": segment["text"].strip()
+                    })
+                else:
+                    content_w_timestamps.append({
+                        "start": f"{segment["start"]:.2f}",
+                        "end": f"{segment["end"]:.2f}",
+                        "text": "..."
+                    })
+                    
         response_queue.put(content_w_timestamps)  # Enviar resultado de vuelta
         transcription_queue.task_done()
 
+def es_segmento_valido(segment):
+    return (
+        segment["no_speech_prob"] < 0.6 and
+        segment["avg_logprob"] > -1.0 and
+        0.4 <= segment["compression_ratio"] <= 2.4
+    )
 
 for i in range(3):
     thread = Thread(target=transcription_worker, args=(MODELS[i], upload_streams[i]), daemon=True)
