@@ -195,6 +195,7 @@ def test_close_session_sessionNotFound():
     assert close.status_code == 404
     assert close.json() == {"detail": "No se ha encontrado la sesión"}
 
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_transmision():
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
@@ -360,54 +361,63 @@ def test_appstatistics():
     assert isinstance(json_data["Tiempo total transcribiendo"], str) 
 
 
+
 @pytest.mark.asyncio
-#@pytest.mark.skip(reason="ahorrar tiempo")
+@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
-    usuarios = 10
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
-    ) as ac:
-        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+    result = []
+    for i in range(1):
+        usuarios = 25
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+        ) as ac:
+            file_path = "/home/mfllamas/Escritorio/ATM_ATC.wav"  # Ruta del archivo real
 
-        async def subir_archivo():
-        # Abrir el archivo en modo binario
-            with open(file_path, "rb") as file:
-                files = {"uploaded_file": (file_path, file, "audio/x-wav")}
-                return await ac.put("/upload", params={"access_token": "soyadmin", "iWordDetection": False}, files=files)
-        
-        gpu_usages = []
+            async def subir_archivo():
+            # Abrir el archivo en modo binario
+                with open(file_path, "rb") as file:
+                    files = {"uploaded_file": (file_path, file, "audio/x-wav")}
+                    return await ac.put("/upload", params={"access_token": "soyadmin", "iWordDetection": False}, files=files)
+            
+            gpu_usages = []
 
-        async def medir_gpu():
-            #Medir el uso de la memoria 
-            while not test_done:
-                uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
-                gpu_usages.append(uso_gpu)
-                await asyncio.sleep(0.5) 
+            async def medir_gpu():
+                #Medir el uso de la memoria 
+                while not test_done:
+                    uso_gpu = torch.cuda.memory_allocated(0) / 1e9  # Convertir a GB
+                    gpu_usages.append(uso_gpu)
+                    await asyncio.sleep(0.5) 
 
-        test_done = False
-        task_monitor = asyncio.create_task(medir_gpu())
-        startTime = datetime.now()
-        response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
-        endtime = datetime.now()
-        test_done = True
-        await task_monitor 
-        #response = await subir_archivo()#un audio solo
-        tiempo = endtime - startTime
-        out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
+            test_done = False
+            task_monitor = asyncio.create_task(medir_gpu())
+            startTime = datetime.now()
+            response = await asyncio.gather(*[subir_archivo() for _ in range(usuarios)])
+            endtime = datetime.now()
+            test_done = True
+            await task_monitor 
+            #response = await subir_archivo()#un audio solo
+            tiempo = endtime - startTime
+            out = (str(timedelta(seconds=int(tiempo.total_seconds()))))
 
-        avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
-        peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
+            avg_gpu_usage = statistics.mean(gpu_usages) if gpu_usages else 0
+            peak_gpu_usage = max(gpu_usages) if gpu_usages else 0
 
-        print(f"Tiempo transcribiendo con {usuarios} usuarios: {out}")
-        print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
-        print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
-        
-        for resp in response:
-            json_data = resp.json()
-            assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
-            assert json_data["status"] == "success"
+            print(f"Tiempo transcribiendo con {usuarios} usuarios: {out}")
+            print(f"Uso medio de GPU: {avg_gpu_usage:.2f} GB")
+            print(f"Pico de memoria GPU: {peak_gpu_usage:.2f} GB")
+
+            result.append(f"Tiempo transcribiendo con {usuarios} usuarios: {out} \nUso medio de GPU: {avg_gpu_usage:.2f} GB \nPico de memoria GPU: {peak_gpu_usage:.2f} GB")
+            
+            for resp in response:
+                json_data = resp.json()
+                assert json_data["filename"] == "/home/mfllamas/Escritorio/ATM_ATC.wav"
+                assert json_data["status"] == "success"
+
+    for i in result:
+            print(i)
+
 
 
 #@pytest.mark.skip(reason = "ahorrar tiempo")

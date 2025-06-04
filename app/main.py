@@ -246,13 +246,12 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
         raise HTTPException(status_code=500, detail=f"Error procesando el audio: {str(e)}")
 
     audio = await save_temp_audio(wav_buffer.getvalue(),RT_DIR)
-    out = await generar_transcripcion_RT(audio,RT_DIR)
-    
-    sesiones[RTsession_id]["transcription"].append(out)
-
-    path_archivo = os.path.join(RT_DIR,audio)
-
-    os.remove(path_archivo)
+    try:
+        out = await generar_transcripcion_RT(audio,RT_DIR)
+        sesiones[RTsession_id]["transcription"].append(out)
+        path_archivo = os.path.join(RT_DIR,audio)
+    finally:
+        os.remove(path_archivo)
 
     palabras_detectadas = []
 
@@ -286,6 +285,7 @@ async def transcript_chunk(access_token, RTsession_id, uploaded_file: UploadFile
                             palabra_db.transcriptionType = "broadcast:" + RTsession_id
 
             db.commit()
+            db.close()
         return {"session": RTsession_id,"transcripcion": out, "aviso_terminos_detectados": palabras_detectadas}
 
 
@@ -340,10 +340,11 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
     }
 
     nombre = await save_temp_audio(wav_buffer.getvalue(),TEMP_DIR)
-    out = await generar_transcripcion(nombre,TEMP_DIR) #Temp dir, archivos se eliminan despues de transcribir
-    path_archivo = os.path.join(TEMP_DIR,nombre)
-
-    os.remove(path_archivo)
+    try:
+        out = await generar_transcripcion(nombre,TEMP_DIR) #Temp dir, archivos se eliminan despues de transcribir
+        path_archivo = os.path.join(TEMP_DIR,nombre)
+    finally:
+        os.remove(path_archivo)
 
     endTranscription = datetime.now()
     spentTranscripting = endTranscription - startTranscription
@@ -380,6 +381,7 @@ async def upload_archivo(uploaded_file: UploadFile, access_token: str, iWordDete
                             palabra_db.lastDetectedBy = user_db.username
 
             db.commit()
+            db.close()
         return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out, "aviso_terminos_detectados": palabras_detectadas}
 
     return {"filename": uploaded_file.filename, "status": "success", "params": params, "duration": str(timedelta(seconds=int(spentTranscripting.total_seconds()))), "transcription": out}
