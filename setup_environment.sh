@@ -18,12 +18,6 @@ sudo apt update && sudo apt install -y python3-venv || {
     exit 1
 }
 
-log "INFO" "Instalando pytest..."
-sudo apt install python3-pytest || {
-    log "ERROR" "Error instalando pytest"
-    exit 1
-}
-
 log "INFO" "Creando entorno virtual..."
 if ! python3 -m venv myenv; then
     log "ERROR" "Error creando el entorno virtual"
@@ -69,6 +63,12 @@ fi
 log "INFO" "Instalando Whisper AI..."
 if ! pip install -U openai-whisper; then
     log "ERROR" "Error instalando Whisper AI"
+    exit 1
+fi
+
+log "INFO" "Instalando dependcias de los tests..."
+if ! pip install pytest && pip install httpx; then
+    log "ERROR" "Error instalando dependencias de los tests"
     exit 1
 fi
 
