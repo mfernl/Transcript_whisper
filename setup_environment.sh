@@ -18,6 +18,12 @@ sudo apt update && sudo apt install -y python3-venv || {
     exit 1
 }
 
+log "INFO" "Instalando pytest..."
+sudo apt install python3-pytest || {
+    log "ERROR" "Error instalando pytest"
+    exit 1
+}
+
 log "INFO" "Creando entorno virtual..."
 if ! python3 -m venv myenv; then
     log "ERROR" "Error creando el entorno virtual"
