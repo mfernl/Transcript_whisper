@@ -40,7 +40,7 @@ warnings.simplefilter(action="ignore",category=FutureWarning)
 clave = subprocess.run(["openssl", "rand", "-hex", "32"], capture_output=True)  #cada vez que se inicia el servidor se crea una clave
 LOAD_MODEL = "turbo"
 SECRET_KEY = clave.stdout.decode("utf-8").strip() #stdout es la salida del comando en shell, y strip se usa para quitar el \n final
-TOKEN_EXP_SECS = 400
+TOKEN_EXP_SECS = 86400
 RTSESSION_EXP = 3600
 WHISPER_VERSION = "v20240930"
 CONNECTED_CLIENTS = 0
@@ -68,7 +68,18 @@ Base.metadata.create_all(bind=engine)
 async def lifespan(app: FastAPI):
     db = SessionLocal()
     load_iwords(db)
-    db.close()
+    existingAdmin = db.query(Admin).filter_by(username = "admin").first()
+    if not existingAdmin:
+        new_admin = Admin(username = "admin", password = hash_password("12345"))
+        db.add(new_admin)
+        db.commit()
+        db.close()
+    existingUser = db.query(User).filter_by(username = "articuno").first()
+    if not existingUser:
+        new_user = User(username = "articuno", password = hash_password("12345"))
+        db.add(new_user)
+        db.commit()
+        db.close()
     yield
     semaphore.release()  # Libera el recurso
     print("Semáforo liberado.")
@@ -108,7 +119,7 @@ def create_token(data: list):
 async def create_idRT(data: list):
     data_token = data.copy()
     l = len(sesiones)
-    id = str(l) + str(random.randint(1,100)) + "#" + data_token["user"]
+    id = str(random.randint(1,1000000000000)) + "#" + data_token["user"]
     return id
 
 class ExpiredTokenError(Exception):
@@ -170,7 +181,7 @@ async def crear_RTsession(access_token):
             "cierre_inactividad": exp_iso,
             "transcription": []
         }
-        print(sesiones)
+        #print(sesiones)
         return {"session_id": id_RT}
     else:
         raise HTTPException(
