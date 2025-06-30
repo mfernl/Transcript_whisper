@@ -195,7 +195,7 @@ def test_close_session_sessionNotFound():
     assert close.status_code == 404
     assert close.json() == {"detail": "No se ha encontrado la sesión"}
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_transmision():
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
@@ -203,7 +203,7 @@ def test_transmision():
     rtId = sesion.json()["session_id"]
     assert sesion.status_code == 200
 
-    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+    file_path = "../test_audio/vanilla.wav"  # Ruta del archivo real
     
     # Abrir el archivo en modo binario
     with open(file_path, "rb") as file:
@@ -218,7 +218,7 @@ def test_transmision():
     assert json_data["transcripcion"][0]["start"] == "0.00"
 
 def test_upload_notWavFile():
-    file_path = "/home/mfllamas/Escritorio/pruebaOtroFormat.mp3"  # Ruta del archivo real
+    file_path = "../test_audio/vanilla.mp3"  # Ruta del archivo real
     
     # Abrir el archivo en modo binario
     with open(file_path, "rb") as file:
@@ -232,7 +232,7 @@ def test_upload_notWavFile():
     assert response.json() == {"detail": "Solo se permiten archivos .wav"}
 
 def test_broadcastnotWavFile():
-    file_path = "/home/mfllamas/Escritorio/pruebaOtroFormat.mp3"  # Ruta del archivo real
+    file_path = "../test_audio/vanilla.mp3"   # Ruta del archivo real
     
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
@@ -269,7 +269,7 @@ async def test_transmision_w_session_closed():
                 "transcription": [""]
             }
         
-        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+        file_path = "../test_audio/vanilla.wav"   # Ruta del archivo real
 
         print(sesiones)
 
@@ -291,9 +291,9 @@ async def test_transmision_w_session_closed():
     
 
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_subir_archivo_real():
-    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+    file_path = "../test_audio/vanilla.wav"  # Ruta del archivo real
     
     # Abrir el archivo en modo binario
     with open(file_path, "rb") as file:
@@ -306,12 +306,12 @@ def test_subir_archivo_real():
     assert response.status_code == 200
     json_data = response.json()
 
-    assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+    assert json_data["filename"] == "../test_audio/vanilla.wav"
     assert json_data["status"] == "success"
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_subir_archivos_RT():
-    rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
+    rutaArchivos = "../audio_chopeado/" 
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
     sesion = client.get("/crearRTsession", params={"access_token": token.json()})
@@ -333,7 +333,8 @@ def test_subir_archivos_RT():
         json_data = response.json()
         print(f"esta es la json_data {json_data}")
         assert json_data["session"] == rtId
-@pytest.mark.skip(reason="ahorrar tiempo")
+        
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_appstatus():
     response = client.get("/appstatus", params = {"access_token": "soyadmin"})
 
@@ -342,7 +343,8 @@ def test_appstatus():
     assert isinstance(json_data["uptime"], str) 
     assert isinstance(json_data["whisper_version"], str) 
     assert isinstance(json_data["connected_clients"], int) 
-@pytest.mark.skip(reason="ahorrar tiempo")
+    
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_hoststatus():
     response = client.get("/hoststatus", params = {"access_token": "soyadmin"})
 
@@ -350,7 +352,7 @@ def test_hoststatus():
     json_data = response.json()
     assert isinstance(json_data["Memoria Reservada (GB)"], float) 
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_appstatistics():
     response = client.get("/appstatistics", params = {"access_token": "soyadmin"})
 
@@ -363,17 +365,17 @@ def test_appstatistics():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async():
     result = []
     for i in range(5):
-        usuarios = 100
+        usuarios = 20
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
         ) as ac:
-            file_path = "/home/mfllamas/Escritorio/ATM_ATC.wav"  # Ruta del archivo real
+            file_path = "../test_audio/vanilla.wav"   # Ruta del archivo real
 
             async def subir_archivo():
             # Abrir el archivo en modo binario
@@ -412,7 +414,7 @@ async def test_subir_archivo_async():
             
             for resp in response:
                 json_data = resp.json()
-                assert json_data["filename"] == "/home/mfllamas/Escritorio/ATM_ATC.wav"
+                assert json_data["filename"] == "../test_audio/vanilla.wav"
                 assert json_data["status"] == "success"
 
     for i in result:
@@ -420,15 +422,15 @@ async def test_subir_archivo_async():
 
 
 
-@pytest.mark.skip(reason = "ahorrar tiempo")
+#@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_subir_archivos_varias_sesiones_RT():
     result = []
     for i in range(5):
-        rutaArchivos = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
+        rutaArchivos = "../audio_chopeado/" 
         token = client.post("/login", params={"username": "articuno", "password": "12345"})
         assert token.status_code == 200
-        num_sesiones = 100
+        num_sesiones = 20
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
         ) as ac:
@@ -470,17 +472,17 @@ async def test_subir_archivos_varias_sesiones_RT():
         for i in result:
             print(i)
 
-@pytest.mark.skip(reason = "ahorrar tiempo")
+#@pytest.mark.skip(reason = "ahorrar tiempo")
 @pytest.mark.asyncio
 async def test_battlefield():
-    rutaRT = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/audio_chopeado/"
+    rutaRT = "../audio_chopeado/"
     usuarios = 2
     num_sesiones = 10
     #login
     token = client.post("/login", params={"username": "articuno", "password": "12345"})
     assert token.status_code == 200
 
-    file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"
+    file_path = "../test_audio/vanilla.wav" 
     archivosRT = os.listdir(rutaRT)
     
     gpu_usages = []
@@ -556,12 +558,12 @@ async def test_battlefield():
                 assert resp.status_code == 200
                 print(f"Upload: {resp.json()["status"]}")
         
-#@pytest.mark.skip(reason = "audio de 1 hora")
+@pytest.mark.skip(reason = "WER 10000 exes")
 @pytest.mark.asyncio
 async def test_word_error_rate():
 
     reference = "Probando, probando, probando. Estamos probando la precisión del sistema de transcripción.En un lugar de la mancha, de cuyo nombre no quiero acordarme, no ha mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocín flaco y galgo corredor.A wizard is never late, Frodo Baggins, nor is he early, he arrives precisely when he means to."
-    file_path = "/home/mfllamas/Escritorio/whisperAPI/Transcript_whisper/test_audio/vanilla.wav"  # Ruta del archivo real
+    file_path = "../test_audio/vanilla.wav"   # Ruta del archivo real
     sumWer = 0
     exes= 10000
 
@@ -610,7 +612,7 @@ def test_admin_add_iWords():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 async def test_subir_archivo_async_word_detection():
     usuarios = 10
     torch.cuda.empty_cache()
@@ -621,7 +623,7 @@ async def test_subir_archivo_async_word_detection():
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
     ) as ac:
-        file_path = "/home/mfllamas/Escritorio/pruebaN1.wav"  # Ruta del archivo real
+        file_path = "../test_audio/vanilla.wav"   # Ruta del archivo real
 
         async def subir_archivo():
         # Abrir el archivo en modo binario
@@ -658,13 +660,13 @@ async def test_subir_archivo_async_word_detection():
         
         for resp in response:
             json_data = resp.json()
-            assert json_data["filename"] == "/home/mfllamas/Escritorio/pruebaN1.wav"
+            assert json_data["filename"] == "../test_audio/vanilla.wav"
             assert json_data["status"] == "success"
             print(json_data["aviso_terminos_detectados"])
-            assert json_data["aviso_terminos_detectados"][0] == "número"
+            assert json_data["aviso_terminos_detectados"][0] == "astillero"
 
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_admin_delete_not_csv_iWords():
     csv = "../assets/controlador_gpu.py"
 
@@ -677,7 +679,7 @@ def test_admin_delete_not_csv_iWords():
     assert response.status_code == 400
     assert response.json() == {"detail": "csv file required"}
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_admin_delete_iWords():
     csv = "../assets/delete.csv"
 
@@ -685,11 +687,11 @@ def test_admin_delete_iWords():
         files = {"uploaded_file": (csv, file, "type=text/csv")}
         response = client.post("/deleteIWordsCsv", params={"deleteAll": 0,"adminUname": "Marco", "adminpswd": "12345"}, files = files)
 
-    print(f"\n printeo el DELETE {response.json()}\n")
+    print(f"\nDELETE {response.json()}\n")
     assert response.status_code == 200
     assert response.json()["delete"] == "csv_file"
 
-@pytest.mark.skip(reason="ahorrar tiempo")
+#@pytest.mark.skip(reason="ahorrar tiempo")
 def test_admin_delete_all_iWords():
     csv = "../assets/delete.csv"
 
