@@ -41,7 +41,10 @@ Una vez encendido el servidor en el equipo local, acceda a la url definida para 
 En la interfaz podemos ver cada uno de los endpoints de la API, para mandar una petición a cada endpoint simplemente debemos hacer click en el endpoint deseado y rellenar los campos necesarios para lanzar una petición a la API:
 ![Endpoint](https://github.com/user-attachments/assets/675d67fd-8573-4631-9519-f72d4c5d9ee2)
 
-Al darle a **Execute** si se ha hecho de manera exitosa la petición, se mostrará en el apartado de **Respuesta** el código de respuesta y el body de esta.
+Al darle a **Execute** si se ha hecho de manera exitosa la petición, se mostrará en el apartado de **Respuesta** el código de respuesta y la respuesta del servidor.
+
+Para ejecutar los tests, se debe iniciar el entorno virtual de python mediante: source myenv/bin/activate
+Una vez activado el entorno, dentro de la carpeta tests/ ejecutar los test de la siguiente manera: pytest -s test_fastapi.py
 
 ## Enpoints de la API
 Se listan todos los endpoints de la API, su dirección y su funcionamiento.
