@@ -11,14 +11,16 @@ La estructura de este repositorio es la siguiente:
 │   ├── main.py                  #Archivo principal de la API, declaración de endpoints.
 │   ├── models.py                #Archivo de declaración de las tablas en la base de datos.
 │   └── security.py              #Archivo para el hasheo de contraseñas.
-│               
+│
+├── assets/                      #Directorio para archivos adicionales como csv para los test.
+├── audio_chopeado/              #Directorio con archivos de audio creados al separar un archivo de audio original en distintas partes.          
 ├── swagger-ui/                  #Directorio para la representación interactiva de la API.
+├── test_audio/                  #Directorio con archivos de audio para los test.
 ├── testing_research/            #Directorio con pruebas anteriores a la implementación de la API y otras pruebas.
 ├── tests/               
 │   └── test_fastapi.py          #Tests de la aplicación.
 │
 ├── README.md
-├── setup.log                    #Log del script de instalación de dependencias.
 ├── setup_environment.sh         #Script para instalar las dependencias.
 └── start.sh                     #Script para iniciar la API.
 ```
