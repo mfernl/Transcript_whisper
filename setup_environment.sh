@@ -66,8 +66,8 @@ if ! pip install -U openai-whisper; then
     exit 1
 fi
 
-log "INFO" "Instalando dependcias de los tests..."
-if ! pip install pytest && pip install httpx && pip install pytest-asyncio; then
+log "INFO" "Instalando dependencias de los tests..."
+if ! pip install pytest httpx pytest-asyncio; then
     log "ERROR" "Error instalando dependencias de los tests"
     exit 1
 fi
