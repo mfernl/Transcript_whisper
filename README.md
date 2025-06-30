@@ -27,7 +27,7 @@ La estructura de este repositorio es la siguiente:
 ## Poniendo en marcha la API
 Para ejecutar la aplicación se debe primero ejecutar el archivo:
 ```
-./setupt_environment.sh
+./setup_environment.sh
 ```
 Una vez instaladas las dependencias, iniciar la aplicación con:
 ```
