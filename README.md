@@ -43,8 +43,14 @@ En la interfaz podemos ver cada uno de los endpoints de la API, para mandar una 
 
 Al darle a **Execute** si se ha hecho de manera exitosa la petición, se mostrará en el apartado de **Respuesta** el código de respuesta y la respuesta del servidor.
 
-Para ejecutar los tests, se debe iniciar el entorno virtual de python mediante: source myenv/bin/activate
-Una vez activado el entorno, dentro de la carpeta tests/ ejecutar los test de la siguiente manera: pytest -s test_fastapi.py
+Para ejecutar los tests, se debe iniciar el entorno virtual de python mediante
+```
+source myenv/bin/activate
+```
+Una vez activado el entorno, dentro de la carpeta tests/ ejecutar los test de la siguiente manera
+```
+pytest -s test_fastapi.py
+```
 
 ## Enpoints de la API
 Se listan todos los endpoints de la API, su dirección y su funcionamiento.
