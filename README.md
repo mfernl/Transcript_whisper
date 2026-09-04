@@ -42,7 +42,8 @@ Once the dependencies are installed, run the application:
 ```
 
 ## How to use
-Once the application is running, open the interactive UI at [http://127.0.0.1:8000/docs/#/] to try each endpoint directly as it shows the following image:
+
+Once the application is running, open the interactive UI at [http://127.0.0.1:8000/docs/#/] to try each endpoint directly, as shown in the image below:
 ![Interactive Interface](https://github.com/user-attachments/assets/c9f37544-d27a-48fd-90b8-f28ae69c4e90)
 
 To send a request, fill in the required fields:
