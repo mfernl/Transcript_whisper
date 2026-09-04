@@ -19,7 +19,7 @@ alongside user management, authentication, and system/usage monitoring.
 │   ├── models.py                # Database tables.
 │   └── security.py              # Password Hashing.
 │
-├── assets/                      # Directorio para archivos adicionales como csv para los test.
+├── assets/                      
 ├── audio_chopeado/              # Audio fragments.          
 ├── swagger-ui/                  # API´s UI.
 ├── test_audio/                  # Test audio files.
