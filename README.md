@@ -76,3 +76,11 @@ pytest -s test_fastapi.py
 | GET | `/appstatistics` | Returns usage stats: queries received, total transcription time | access_token | JSON Object |
 | POST | `/addIWordsCsv` | Adds new key terms to the important-terms dictionary | AdminUsername, AdminPasswords | JSON Object |
 | POST | `/deleteIWordsCsv` | Removes key terms (or all of them) from the dictionary | AdminUsername, AdminPasswords, DeleteAll ( 1 o 0 ) | JSON Object |
+
+## Tech Stack
+
+Python · FastAPI · OpenAI Whisper · SQLite · pytest · Swagger/OpenAPI
+
+## Author
+
+Marco Fernández Llamas — [github.com/mfernl](https://github.com/mfernl)
