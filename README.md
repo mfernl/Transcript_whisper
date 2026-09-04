@@ -1,5 +1,5 @@
 # Real-time and Batch Speech Transcription API
-This project consists of a REST API combined with [WhisperAI](https://github.com/openai/whisper) for GPU-accelerated (**NVIDIA**) audio transcription. Running on **Linux** OS, this project is capable of receiving .wav format audio and returning transcriptions.
+Bachelor's Thesis (BSc in Computer Engineering, Universidad de León). This project consists of a REST API combined with [WhisperAI](https://github.com/openai/whisper) for GPU-accelerated (**NVIDIA**) audio transcription. Running on **Linux** OS, this project is capable of receiving .wav format audio and returning transcriptions.
 
 ## Overview
 
